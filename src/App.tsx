@@ -1,0 +1,532 @@
+import React, { useEffect, useState } from 'react';
+import './App.css';
+
+interface Patient {
+  id: string;
+  family_name: string;
+  gender: string;
+  birth_date: string;
+  race?: string;
+  ethnicity?: string;
+  birth_sex?: string;
+  identifier?: string;
+  marital_status?: string;
+  deceased_date?: string;
+  managing_organization?: string;
+}
+
+interface Condition {
+  id: string;
+  code: string;
+  code_system: string;
+  code_display: string;
+  patient_id: string;
+  category: string;
+  encounter_id: string;
+  status: string;
+}
+
+interface Medication {
+  id: string;
+  patient_id: string;
+  medication_code: string;
+  medication_display: string;
+  medication_system: string;
+  status: string;
+  quantity: number;
+  quantity_unit: string;
+  days_supply: number;
+  dispense_date: string;
+  encounter_id: string;
+}
+
+interface Encounter {
+  id: string;
+  patient_id: string;
+  encounter_type: string;
+  status: string;
+  start_date: string;
+  end_date: string;
+  class_code: string;
+  class_display: string;
+  service_type: string;
+  priority_code: string;
+  priority_display: string;
+  diagnosis_condition: string;
+  diagnosis_use: string;
+  diagnosis_rank: number;
+  hospitalization_admit_source_code: string;
+  hospitalization_admit_source_display: string;
+  hospitalization_discharge_disposition_code: string;
+  hospitalization_discharge_disposition_display: string;
+}
+
+interface MedicationAdministration {
+  id: string;
+  patient_id: string;
+  encounter_id: string;
+  medication_code: string;
+  medication_display: string;
+  medication_system: string;
+  status: string;
+  effective_start: string;
+  effective_end: string;
+  dosage_quantity: number;
+  dosage_unit: string;
+  route_code: string;
+  route_display: string;
+  site_code: string;
+  site_display: string;
+  method_code: string;
+  method_display: string;
+  reason_code: string;
+  reason_display: string;
+}
+
+interface MedicationRequest {
+  id: string;
+  patient_id: string;
+  encounter_id: string;
+  medication_code: string;
+  medication_display: string;
+  medication_system: string;
+  status: string;
+  intent: string;
+  priority: string;
+  authored_on: string;
+  dosage_quantity: number;
+  dosage_unit: string;
+  frequency_code: string;
+  frequency_display: string;
+  route_code: string;
+  route_display: string;
+  reason_code: string;
+  reason_display: string;
+}
+
+interface Observation {
+  id: string;
+  patient_id: string;
+  encounter_id: string;
+  observation_type: string;
+  code: string;
+  code_display: string;
+  code_system: string;
+  status: string;
+  effective_datetime: string;
+  issued_datetime: string;
+  value_quantity: number;
+  value_unit: string;
+  value_code: string;
+  value_display: string;
+  value_string: string;
+  value_boolean: boolean;
+  value_datetime: string;
+  category_code: string;
+  category_display: string;
+  interpretation_code: string;
+  interpretation_display: string;
+  reference_range_low: number;
+  reference_range_high: number;
+  reference_range_unit: string;
+}
+
+interface Procedure {
+  id: string;
+  patient_id: string;
+  encounter_id: string;
+  procedure_code: string;
+  procedure_display: string;
+  procedure_system: string;
+  status: string;
+  performed_datetime: string;
+  performed_period_start: string;
+  performed_period_end: string;
+  category_code: string;
+  category_display: string;
+  reason_code: string;
+  reason_display: string;
+  outcome_code: string;
+  outcome_display: string;
+  complication_code: string;
+  complication_display: string;
+  follow_up_code: string;
+  follow_up_display: string;
+}
+
+interface Specimen {
+  id: string;
+  patient_id: string;
+  encounter_id: string;
+  specimen_type_code: string;
+  specimen_type_display: string;
+  specimen_type_system: string;
+  status: string;
+  collected_datetime: string;
+  received_datetime: string;
+  collection_method_code: string;
+  collection_method_display: string;
+  body_site_code: string;
+  body_site_display: string;
+  fasting_status_code: string;
+  fasting_status_display: string;
+  container_code: string;
+  container_display: string;
+  note: string;
+}
+
+interface PatientSummary {
+  patient: Patient;
+  summary: {
+    conditions: number;
+    medications: number;
+    encounters: number;
+    medication_administrations: number;
+    medication_requests: number;
+    observations: number;
+    procedures: number;
+    specimens: number;
+  };
+}
+
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8002';
+
+function App() {
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [patientSummary, setPatientSummary] = useState<PatientSummary | null>(null);
+  const [conditions, setConditions] = useState<Condition[]>([]);
+  const [medications, setMedications] = useState<Medication[]>([]);
+  const [encounters, setEncounters] = useState<Encounter[]>([]);
+  const [medicationAdministrations, setMedicationAdministrations] = useState<MedicationAdministration[]>([]);
+  const [medicationRequests, setMedicationRequests] = useState<MedicationRequest[]>([]);
+  const [observations, setObservations] = useState<Observation[]>([]);
+  const [procedures, setProcedures] = useState<Procedure[]>([]);
+  const [specimens, setSpecimens] = useState<Specimen[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<string>('summary');
+
+  useEffect(() => {
+    setLoading(true);
+    fetch(`${API_BASE}/patients`)
+      .then(res => res.json())
+      .then(data => {
+        setPatients(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError('Failed to fetch patients');
+        setLoading(false);
+      });
+  }, []);
+
+  const selectPatient = (patient: Patient) => {
+    setSelectedPatient(patient);
+    setLoading(true);
+    setError(null);
+    setActiveTab('summary');
+    
+    // Fetch patient summary
+    fetch(`${API_BASE}/patients/${patient.id}/summary`)
+      .then(res => res.json())
+      .then(data => {
+        setPatientSummary(data);
+      })
+      .catch(err => {
+        setError('Failed to fetch patient summary');
+      });
+    
+    // Fetch all data types
+    const fetchPromises = [
+      fetch(`${API_BASE}/patients/${patient.id}/conditions`).then(res => res.json()).then(setConditions).catch(() => setConditions([])),
+      fetch(`${API_BASE}/patients/${patient.id}/medications`).then(res => res.json()).then(setMedications).catch(() => setMedications([])),
+      fetch(`${API_BASE}/patients/${patient.id}/encounters`).then(res => res.json()).then(setEncounters).catch(() => setEncounters([])),
+      fetch(`${API_BASE}/patients/${patient.id}/medication-administrations`).then(res => res.json()).then(setMedicationAdministrations).catch(() => setMedicationAdministrations([])),
+      fetch(`${API_BASE}/patients/${patient.id}/medication-requests`).then(res => res.json()).then(setMedicationRequests).catch(() => setMedicationRequests([])),
+      fetch(`${API_BASE}/patients/${patient.id}/observations`).then(res => res.json()).then(setObservations).catch(() => setObservations([])),
+      fetch(`${API_BASE}/patients/${patient.id}/procedures`).then(res => res.json()).then(setProcedures).catch(() => setProcedures([])),
+      fetch(`${API_BASE}/patients/${patient.id}/specimens`).then(res => res.json()).then(setSpecimens).catch(() => setSpecimens([]))
+    ];
+    
+    Promise.all(fetchPromises)
+      .then(() => {
+        setLoading(false);
+      })
+      .catch(() => {
+        setLoading(false);
+      });
+  };
+
+  return (
+    <div className="App">
+      <h1>EHR Patient Viewer</h1>
+      {error && <div style={{ color: 'red', padding: '10px', backgroundColor: '#ffebee', borderRadius: '4px', margin: '10px 0' }}>{error}</div>}
+      
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '2rem' }}>
+        {/* Patient List */}
+        <div style={{ minWidth: '300px' }}>
+          <h2>Patients</h2>
+          {loading && <div>Loading...</div>}
+          <ul style={{ listStyle: 'none', padding: 0 }}>
+            {patients.map(patient => (
+              <li key={patient.id} style={{ marginBottom: '5px' }}>
+                <button 
+                  onClick={() => selectPatient(patient)} 
+                  style={{ 
+                    fontWeight: selectedPatient?.id === patient.id ? 'bold' : 'normal',
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '8px',
+                    border: selectedPatient?.id === patient.id ? '2px solid #007bff' : '1px solid #ddd',
+                    borderRadius: '4px',
+                    backgroundColor: selectedPatient?.id === patient.id ? '#e3f2fd' : 'white',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {patient.family_name} ({patient.gender}, {patient.birth_date})
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        {/* Patient Details */}
+        <div style={{ flex: 1 }}>
+          {selectedPatient && patientSummary && (
+            <div>
+              <h2>Patient Details</h2>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
+                <tbody>
+                  <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>ID</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.id}</td></tr>
+                  <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Name</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.family_name}</td></tr>
+                  <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Gender</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.gender}</td></tr>
+                  <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Birth Date</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.birth_date}</td></tr>
+                  <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Race</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.race}</td></tr>
+                  <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Ethnicity</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.ethnicity}</td></tr>
+                  <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Birth Sex</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.birth_sex}</td></tr>
+                  <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Identifier</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.identifier}</td></tr>
+                  <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Marital Status</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.marital_status}</td></tr>
+                  <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Deceased Date</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.deceased_date || 'N/A'}</td></tr>
+                  <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Managing Org</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.managing_organization}</td></tr>
+                </tbody>
+              </table>
+
+              {/* Summary Dashboard */}
+              <div style={{ marginBottom: '20px' }}>
+                <h3>Data Summary</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
+                  <div style={{ padding: '10px', backgroundColor: '#e8f5e8', borderRadius: '4px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#2e7d32' }}>{patientSummary.summary.conditions}</div>
+                    <div>Conditions</div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#fff3e0', borderRadius: '4px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f57c00' }}>{patientSummary.summary.medications}</div>
+                    <div>Medications</div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '4px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1976d2' }}>{patientSummary.summary.encounters}</div>
+                    <div>Encounters</div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#fce4ec', borderRadius: '4px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#c2185b' }}>{patientSummary.summary.medication_administrations}</div>
+                    <div>Med Admin</div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#f1f8e9', borderRadius: '4px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#388e3c' }}>{patientSummary.summary.medication_requests}</div>
+                    <div>Med Requests</div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#fff8e1', borderRadius: '4px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#fbc02d' }}>{patientSummary.summary.observations}</div>
+                    <div>Observations</div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#e8eaf6', borderRadius: '4px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#3f51b5' }}>{patientSummary.summary.procedures}</div>
+                    <div>Procedures</div>
+                  </div>
+                  <div style={{ padding: '10px', backgroundColor: '#e0f2f1', borderRadius: '4px', textAlign: 'center' }}>
+                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#00695c' }}>{patientSummary.summary.specimens}</div>
+                    <div>Specimens</div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabs */}
+              <div style={{ marginBottom: '20px' }}>
+                <div style={{ display: 'flex', borderBottom: '1px solid #ddd', marginBottom: '20px' }}>
+                  {[
+                    { id: 'summary', label: 'Summary' },
+                    { id: 'conditions', label: 'Conditions' },
+                    { id: 'medications', label: 'Medications' },
+                    { id: 'encounters', label: 'Encounters' },
+                    { id: 'medication-administrations', label: 'Med Admin' },
+                    { id: 'medication-requests', label: 'Med Requests' },
+                    { id: 'observations', label: 'Observations' },
+                    { id: 'procedures', label: 'Procedures' },
+                    { id: 'specimens', label: 'Specimens' }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      style={{
+                        padding: '10px 20px',
+                        border: 'none',
+                        backgroundColor: activeTab === tab.id ? '#007bff' : 'transparent',
+                        color: activeTab === tab.id ? 'white' : '#333',
+                        cursor: 'pointer',
+                        borderBottom: activeTab === tab.id ? '2px solid #007bff' : 'none'
+                      }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Tab Content */}
+                {loading ? (
+                  <div>Loading...</div>
+                ) : (
+                  <div>
+                    {activeTab === 'conditions' && (
+                      <div>
+                        <h3>Conditions ({conditions.length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {conditions.map(cond => (
+                            <li key={cond.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{cond.code_display}</b> (ICD: {cond.code})<br />
+                              Category: {cond.category} | Status: {cond.status}
+                            </li>
+                          ))}
+                          {conditions.length === 0 && <li>No conditions found.</li>}
+                        </ul>
+                      </div>
+                    )}
+
+                    {activeTab === 'medications' && (
+                      <div>
+                        <h3>Medications ({medications.length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {medications.map(med => (
+                            <li key={med.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{med.medication_display}</b> (Code: {med.medication_code})<br />
+                              Status: {med.status} | Quantity: {med.quantity} {med.quantity_unit}<br />
+                              Days Supply: {med.days_supply} | Dispense Date: {med.dispense_date}
+                            </li>
+                          ))}
+                          {medications.length === 0 && <li>No medications found.</li>}
+                        </ul>
+                      </div>
+                    )}
+
+                    {activeTab === 'encounters' && (
+                      <div>
+                        <h3>Encounters ({encounters.length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {encounters.map(enc => (
+                            <li key={enc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{enc.class_display}</b> ({enc.encounter_type})<br />
+                              Status: {enc.status} | Start: {enc.start_date} | End: {enc.end_date}<br />
+                              Priority: {enc.priority_display} | Service: {enc.service_type}
+                            </li>
+                          ))}
+                          {encounters.length === 0 && <li>No encounters found.</li>}
+                        </ul>
+                      </div>
+                    )}
+
+                    {activeTab === 'medication-administrations' && (
+                      <div>
+                        <h3>Medication Administrations ({medicationAdministrations.length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {medicationAdministrations.slice(0, 50).map(admin => (
+                            <li key={admin.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{admin.medication_display}</b> (Code: {admin.medication_code})<br />
+                              Status: {admin.status} | Dosage: {admin.dosage_quantity} {admin.dosage_unit}<br />
+                              Route: {admin.route_code} | Effective: {admin.effective_start}
+                            </li>
+                          ))}
+                          {medicationAdministrations.length === 0 && <li>No medication administrations found.</li>}
+                          {medicationAdministrations.length > 50 && <li>... and {medicationAdministrations.length - 50} more</li>}
+                        </ul>
+                      </div>
+                    )}
+
+                    {activeTab === 'medication-requests' && (
+                      <div>
+                        <h3>Medication Requests ({medicationRequests.length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {medicationRequests.map(req => (
+                            <li key={req.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{req.medication_display}</b> (Code: {req.medication_code})<br />
+                              Status: {req.status} | Intent: {req.intent} | Priority: {req.priority}<br />
+                              Dosage: {req.dosage_quantity} {req.dosage_unit} | Frequency: {req.frequency_display}<br />
+                              Authored: {req.authored_on}
+                            </li>
+                          ))}
+                          {medicationRequests.length === 0 && <li>No medication requests found.</li>}
+                        </ul>
+                      </div>
+                    )}
+
+                    {activeTab === 'observations' && (
+                      <div>
+                        <h3>Observations ({observations.length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {observations.slice(0, 50).map(obs => (
+                            <li key={obs.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{obs.code_display}</b> (Type: {obs.observation_type})<br />
+                              Value: {obs.value_quantity || obs.value_string || obs.value_display || obs.value_code || 'N/A'} {obs.value_unit}<br />
+                              Category: {obs.category_display} | Effective: {obs.effective_datetime}
+                            </li>
+                          ))}
+                          {observations.length === 0 && <li>No observations found.</li>}
+                          {observations.length > 50 && <li>... and {observations.length - 50} more</li>}
+                        </ul>
+                      </div>
+                    )}
+
+                    {activeTab === 'procedures' && (
+                      <div>
+                        <h3>Procedures ({procedures.length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {procedures.map(proc => (
+                            <li key={proc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{proc.procedure_display}</b> (Code: {proc.procedure_code})<br />
+                              Status: {proc.status} | Category: {proc.category_display}<br />
+                              Performed: {proc.performed_datetime || proc.performed_period_start}<br />
+                              Outcome: {proc.outcome_display} | Follow-up: {proc.follow_up_display}
+                            </li>
+                          ))}
+                          {procedures.length === 0 && <li>No procedures found.</li>}
+                        </ul>
+                      </div>
+                    )}
+
+                    {activeTab === 'specimens' && (
+                      <div>
+                        <h3>Specimens ({specimens.length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {specimens.map(spec => (
+                            <li key={spec.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{spec.specimen_type_display}</b> (Code: {spec.specimen_type_code})<br />
+                              Status: {spec.status} | Collection Method: {spec.collection_method_display}<br />
+                              Body Site: {spec.body_site_display} | Collected: {spec.collected_datetime}<br />
+                              Container: {spec.container_display} | Note: {spec.note || 'N/A'}
+                            </li>
+                          ))}
+                          {specimens.length === 0 && <li>No specimens found.</li>}
+                        </ul>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;
