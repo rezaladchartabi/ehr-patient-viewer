@@ -1,0 +1,24 @@
+services:
+  # Backend API Service
+  - type: web
+    name: ehr-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: PORT
+        value: 8000
+
+  # Frontend Static Site
+  - type: web
+    name: ehr-frontend
+    env: static
+    plan: free
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://ehr-backend.onrender.com
