@@ -20,3 +20,7 @@ services:
     envVars:
       - key: REACT_APP_API_URL
         value: https://ehr-backend.onrender.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
