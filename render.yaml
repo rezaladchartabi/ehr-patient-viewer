@@ -19,7 +19,7 @@ services:
     staticPublishPath: ./build
     envVars:
       - key: REACT_APP_API_URL
-        value: https://ehr-backend.onrender.com
+        value: https://ehr-backend-87r9.onrender.com
     routes:
       - type: rewrite
         source: /*
