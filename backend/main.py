@@ -6,7 +6,7 @@ from typing import List, Dict
 import os
 
 # Database path
-DB_PATH = "ehr_data.sqlite3"
+DB_PATH = os.path.join(os.path.dirname(__file__), "ehr_data.sqlite3")
 
 app = FastAPI(title="EHR System API", version="1.0.0")
 

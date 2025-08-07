@@ -189,7 +189,7 @@ interface PatientSummary {
   };
 }
 
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8002';
+const API_BASE = process.env.REACT_APP_API_URL || 'https://ehr-backend-87r9.onrender.com';
 
 function App() {
   const [patients, setPatients] = useState<Patient[]>([]);
