@@ -323,7 +323,7 @@ function App() {
       {error && <div style={{ color: 'red', padding: '10px', backgroundColor: '#ffebee', borderRadius: '4px', margin: '10px 0' }}>{error}</div>}
       
       {/* Global Search (right-aligned) */}
-      <div className="relative z-50 ml-auto w-full max-w-[25vw]" style={{ marginTop: '10px', transform: 'translateX(10px)' }}>
+      <div className="relative z-50 ml-auto w-full max-w-[25vw]" style={{ marginTop: '10px' }}>
         <div className="flex gap-2">
           <input
             type="text"
