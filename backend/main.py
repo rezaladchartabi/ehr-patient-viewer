@@ -176,6 +176,83 @@ def global_search(q: str, limit: int = 50) -> List[Dict]:
     # Trim to global limit
     return results[:limit]
 
+
+@app.get("/search/patients", response_model=List[Dict])
+def search_patients(q: str, limit: int = 50) -> List[Dict]:
+    """Return distinct patients whose data matches the query anywhere.
+    Searches core patient attributes and commonly searched columns in related tables.
+    """
+    if not q:
+        return []
+
+    search_term = f"%{q}%"
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    matched_patient_ids = set()
+
+    # Match by patient attributes
+    cursor.execute(
+        """
+        SELECT id as patient_id FROM patient
+        WHERE family_name LIKE ? OR identifier LIKE ? OR id LIKE ? OR gender LIKE ?
+        """,
+        (search_term, search_term, search_term, search_term),
+    )
+    matched_patient_ids.update([row[0] for row in cursor.fetchall()])
+
+    def add_matches(query: str, params: tuple):
+        cursor.execute(query, params)
+        matched_patient_ids.update([row[0] for row in cursor.fetchall()])
+
+    # Related tables
+    add_matches(
+        "SELECT DISTINCT patient_id FROM condition WHERE code_display LIKE ? OR code LIKE ? OR category LIKE ?",
+        (search_term, search_term, search_term),
+    )
+    add_matches(
+        "SELECT DISTINCT patient_id FROM medication WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?",
+        (search_term, search_term, search_term),
+    )
+    add_matches(
+        "SELECT DISTINCT patient_id FROM encounter WHERE class_display LIKE ? OR encounter_type LIKE ? OR status LIKE ?",
+        (search_term, search_term, search_term),
+    )
+    add_matches(
+        "SELECT DISTINCT patient_id FROM medication_administration WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?",
+        (search_term, search_term, search_term),
+    )
+    add_matches(
+        "SELECT DISTINCT patient_id FROM medication_request WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?",
+        (search_term, search_term, search_term),
+    )
+    add_matches(
+        "SELECT DISTINCT patient_id FROM observation WHERE code_display LIKE ? OR code LIKE ? OR observation_type LIKE ?",
+        (search_term, search_term, search_term),
+    )
+    add_matches(
+        "SELECT DISTINCT patient_id FROM procedure WHERE procedure_display LIKE ? OR procedure_code LIKE ? OR status LIKE ?",
+        (search_term, search_term, search_term),
+    )
+    add_matches(
+        "SELECT DISTINCT patient_id FROM specimen WHERE specimen_type_display LIKE ? OR body_site_display LIKE ? OR status LIKE ?",
+        (search_term, search_term, search_term),
+    )
+
+    if not matched_patient_ids:
+        conn.close()
+        return []
+
+    # Fetch patient rows for matched ids
+    placeholders = ",".join(["?"] * len(matched_patient_ids))
+    cursor.execute(
+        f"SELECT * FROM patient WHERE id IN ({placeholders}) LIMIT ?",
+        (*matched_patient_ids, limit),
+    )
+    patients = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    return patients
+
 @app.get("/patients", response_model=List[Dict])
 def list_patients():
     conn = get_db_connection()

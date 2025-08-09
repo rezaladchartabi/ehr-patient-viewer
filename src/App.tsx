@@ -209,6 +209,7 @@ function App() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<Array<{ type: string; id: string; title: string; subtitle: string; patient_id: string }>>([]);
   const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [searchPatients, setSearchPatients] = useState<Patient[]>([]);
 
   useEffect(() => {
     setLoading(true);
@@ -287,9 +288,14 @@ function App() {
         <button
           onClick={() => {
             setIsSearching(true);
-            fetch(`${API_BASE}/search?q=${encodeURIComponent(searchQuery)}`)
-              .then(res => res.json())
-              .then(data => setSearchResults(data))
+            Promise.all([
+              fetch(`${API_BASE}/search?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
+              fetch(`${API_BASE}/search/patients?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
+            ])
+              .then(([items, patients]) => {
+                setSearchResults(items);
+                setSearchPatients(patients);
+              })
               .finally(() => setIsSearching(false));
           }}
           style={{ padding: '10px 16px' }}
@@ -299,6 +305,22 @@ function App() {
       </div>
 
       {isSearching && <div>Searching...</div>}
+      {searchPatients.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <h3>Matched Patients ({searchPatients.length})</h3>
+          <ul style={{ listStyle: 'none', padding: 0 }}>
+            {searchPatients.map((p) => (
+              <li key={p.id} style={{ padding: '8px', border: '1px solid #ddd', marginBottom: '6px', borderRadius: '4px', cursor: 'pointer' }}
+                  onClick={() => selectPatient(p)}
+              >
+                <div style={{ fontWeight: 'bold' }}>{p.family_name}</div>
+                <div style={{ fontSize: '12px', color: '#666' }}>{p.gender} • {p.birth_date} • {p.identifier}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {searchResults.length > 0 && (
         <div style={{ marginBottom: '20px' }}>
           <h3>Search Results ({searchResults.length})</h3>
