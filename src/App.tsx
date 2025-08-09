@@ -453,17 +453,7 @@ function App() {
 
               {/* Tabs */}
               <div style={{ marginBottom: '20px' }}>
-                <div style={{ marginBottom: '10px' }}>
-                  <PatientTabs
-                    tabs={[
-                      { id: 'Default', label: 'Default' },
-                      { id: 'ED', label: 'ED' },
-                      { id: 'ICU', label: 'ICU' },
-                    ]}
-                    active={activeServiceLine}
-                    onChange={(id) => setActiveServiceLine(id as ServiceLine)}
-                  />
-                </div>
+                {/* Top-level: Data Type */}
                 <PatientTabs
                   tabs={[
                     { id: 'conditions', label: 'Conditions' },
@@ -478,6 +468,18 @@ function App() {
                   active={activeTab}
                   onChange={setActiveTab}
                 />
+                {/* Sub-level: Service Line */}
+                <div style={{ marginTop: '10px' }}>
+                  <PatientTabs
+                    tabs={[
+                      { id: 'Default', label: 'Default' },
+                      { id: 'ED', label: 'ED' },
+                      { id: 'ICU', label: 'ICU' },
+                    ]}
+                    active={activeServiceLine}
+                    onChange={(id) => setActiveServiceLine(id as ServiceLine)}
+                  />
+                </div>
 
                 {/* Tab Content */}
                 {loading ? (
