@@ -219,6 +219,7 @@ function App() {
   const [searchPatients, setSearchPatients] = useState<Patient[]>([]);
 
   type ServiceLine = 'ICU' | 'ED' | 'Other';
+  const [activeServiceLine, setActiveServiceLine] = useState<ServiceLine>('Other');
 
   const getServiceLineFromEncounter = (enc: Encounter): ServiceLine => {
     if (!enc) return 'Other';
@@ -489,6 +490,17 @@ function App() {
 
               {/* Tabs */}
               <div style={{ marginBottom: '20px' }}>
+                <div style={{ marginBottom: '10px' }}>
+                  <PatientTabs
+                    tabs={[
+                      { id: 'Other', label: 'Other' },
+                      { id: 'ED', label: 'ED' },
+                      { id: 'ICU', label: 'ICU' },
+                    ]}
+                    active={activeServiceLine}
+                    onChange={(id) => setActiveServiceLine(id as ServiceLine)}
+                  />
+                </div>
                 <PatientTabs
                   tabs={[
                     { id: 'summary', label: 'Summary' },
@@ -512,173 +524,137 @@ function App() {
                   <div>
                     {activeTab === 'conditions' && (
                       <div>
-                        <h3>Conditions ({conditions.length})</h3>
-                        {(['ICU','ED','Other'] as ServiceLine[]).map(line => (
-                          <div key={line} style={{ marginBottom: '14px' }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>{line}</div>
-                            <ul style={{ listStyle: 'none', padding: 0 }}>
-                              {groupedConditions[line].map(cond => (
-                                <li key={cond.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                                  <b>{cond.code_display}</b> (ICD: {cond.code})<br />
-                                  Category: {cond.category} | Status: {cond.status}
-                                </li>
-                              ))}
-                              {groupedConditions[line].length === 0 && <li style={{ color: '#666' }}>None</li>}
-                            </ul>
-                          </div>
-                        ))}
+                        <h3>Conditions ({groupedConditions[activeServiceLine].length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {groupedConditions[activeServiceLine].map(cond => (
+                            <li key={cond.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{cond.code_display}</b> (ICD: {cond.code})<br />
+                              Category: {cond.category} | Status: {cond.status}
+                            </li>
+                          ))}
+                          {groupedConditions[activeServiceLine].length === 0 && <li>None</li>}
+                        </ul>
                       </div>
                     )}
 
                     {activeTab === 'medications' && (
                       <div>
-                        <h3>Medications ({medications.length})</h3>
-                        {(['ICU','ED','Other'] as ServiceLine[]).map(line => (
-                          <div key={line} style={{ marginBottom: '14px' }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>{line}</div>
-                            <ul style={{ listStyle: 'none', padding: 0 }}>
-                              {groupedMedications[line].map(med => (
-                                <li key={med.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                                  <b>{med.medication_display}</b> (Code: {med.medication_code})<br />
-                                  Status: {med.status} | Quantity: {med.quantity} {med.quantity_unit}<br />
-                                  Days Supply: {med.days_supply} | Dispense Date: {med.dispense_date}
-                                </li>
-                              ))}
-                              {groupedMedications[line].length === 0 && <li style={{ color: '#666' }}>None</li>}
-                            </ul>
-                          </div>
-                        ))}
+                        <h3>Medications ({groupedMedications[activeServiceLine].length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {groupedMedications[activeServiceLine].map(med => (
+                            <li key={med.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{med.medication_display}</b> (Code: {med.medication_code})<br />
+                              Status: {med.status} | Quantity: {med.quantity} {med.quantity_unit}<br />
+                              Days Supply: {med.days_supply} | Dispense Date: {med.dispense_date}
+                            </li>
+                          ))}
+                          {groupedMedications[activeServiceLine].length === 0 && <li>None</li>}
+                        </ul>
                       </div>
                     )}
 
                     {activeTab === 'encounters' && (
                       <div>
-                        <h3>Encounters ({encounters.length})</h3>
-                        {(['ICU','ED','Other'] as ServiceLine[]).map(line => (
-                          <div key={line} style={{ marginBottom: '14px' }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>{line}</div>
-                            <ul style={{ listStyle: 'none', padding: 0 }}>
-                              {groupedEncounters[line].map(enc => (
-                                <li key={enc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                                  <b>{enc.class_display}</b> ({enc.encounter_type})<br />
-                                  Status: {enc.status} | Start: {enc.start_date} | End: {enc.end_date}<br />
-                                  Priority: {enc.priority_display} | Service: {enc.service_type}
-                                </li>
-                              ))}
-                              {groupedEncounters[line].length === 0 && <li style={{ color: '#666' }}>None</li>}
-                            </ul>
-                          </div>
-                        ))}
+                        <h3>Encounters ({groupedEncounters[activeServiceLine].length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {groupedEncounters[activeServiceLine].map(enc => (
+                            <li key={enc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{enc.class_display}</b> ({enc.encounter_type})<br />
+                              Status: {enc.status} | Start: {enc.start_date} | End: {enc.end_date}<br />
+                              Priority: {enc.priority_display} | Service: {enc.service_type}
+                            </li>
+                          ))}
+                          {groupedEncounters[activeServiceLine].length === 0 && <li>None</li>}
+                        </ul>
                       </div>
                     )}
 
                     {activeTab === 'medication-administrations' && (
                       <div>
-                        <h3>Medication Administrations ({medicationAdministrations.length})</h3>
-                        {(['ICU','ED','Other'] as ServiceLine[]).map(line => (
-                          <div key={line} style={{ marginBottom: '14px' }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>{line}</div>
-                            <ul style={{ listStyle: 'none', padding: 0 }}>
-                              {groupedMedicationAdministrations[line].slice(0, 50).map(admin => (
-                                <li key={admin.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                                  <b>{admin.medication_display}</b> (Code: {admin.medication_code})<br />
-                                  Status: {admin.status} | Dosage: {admin.dosage_quantity} {admin.dosage_unit}<br />
-                                  Route: {admin.route_code} | Effective: {admin.effective_start}
-                                </li>
-                              ))}
-                              {groupedMedicationAdministrations[line].length === 0 && <li style={{ color: '#666' }}>None</li>}
-                              {groupedMedicationAdministrations[line].length > 50 && <li>... and {groupedMedicationAdministrations[line].length - 50} more</li>}
-                            </ul>
-                          </div>
-                        ))}
+                        <h3>Medication Administrations ({groupedMedicationAdministrations[activeServiceLine].length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {groupedMedicationAdministrations[activeServiceLine].slice(0, 50).map(admin => (
+                            <li key={admin.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{admin.medication_display}</b> (Code: {admin.medication_code})<br />
+                              Status: {admin.status} | Dosage: {admin.dosage_quantity} {admin.dosage_unit}<br />
+                              Route: {admin.route_code} | Effective: {admin.effective_start}
+                            </li>
+                          ))}
+                          {groupedMedicationAdministrations[activeServiceLine].length === 0 && <li>None</li>}
+                          {groupedMedicationAdministrations[activeServiceLine].length > 50 && (
+                            <li>... and {groupedMedicationAdministrations[activeServiceLine].length - 50} more</li>
+                          )}
+                        </ul>
                       </div>
                     )}
 
                     {activeTab === 'medication-requests' && (
                       <div>
-                        <h3>Medication Requests ({medicationRequests.length})</h3>
-                        {(['ICU','ED','Other'] as ServiceLine[]).map(line => (
-                          <div key={line} style={{ marginBottom: '14px' }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>{line}</div>
-                            <ul style={{ listStyle: 'none', padding: 0 }}>
-                              {groupedMedicationRequests[line].map(req => (
-                                <li key={req.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                                  <b>{req.medication_display}</b> (Code: {req.medication_code})<br />
-                                  Status: {req.status} | Intent: {req.intent} | Priority: {req.priority}<br />
-                                  Dosage: {req.dosage_quantity} {req.dosage_unit} | Frequency: {req.frequency_display}<br />
-                                  Authored: {req.authored_on}
-                                </li>
-                              ))}
-                              {groupedMedicationRequests[line].length === 0 && <li style={{ color: '#666' }}>None</li>}
-                            </ul>
-                          </div>
-                        ))}
+                        <h3>Medication Requests ({groupedMedicationRequests[activeServiceLine].length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {groupedMedicationRequests[activeServiceLine].map(req => (
+                            <li key={req.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{req.medication_display}</b> (Code: {req.medication_code})<br />
+                              Status: {req.status} | Intent: {req.intent} | Priority: {req.priority}<br />
+                              Dosage: {req.dosage_quantity} {req.dosage_unit} | Frequency: {req.frequency_display}<br />
+                              Authored: {req.authored_on}
+                            </li>
+                          ))}
+                          {groupedMedicationRequests[activeServiceLine].length === 0 && <li>None</li>}
+                        </ul>
                       </div>
                     )}
 
                     {activeTab === 'observations' && (
                       <div>
-                        <h3>Observations ({observations.length})</h3>
-                        {(['ICU','ED','Other'] as ServiceLine[]).map(line => (
-                          <div key={line} style={{ marginBottom: '14px' }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>{line}</div>
-                            <ul style={{ listStyle: 'none', padding: 0 }}>
-                              {groupedObservations[line].slice(0, 50).map(obs => (
-                                <li key={obs.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                                  <b>{obs.code_display}</b> (Type: {obs.observation_type})<br />
-                                  Value: {obs.value_quantity || obs.value_string || obs.value_display || obs.value_code || 'N/A'} {obs.value_unit}<br />
-                                  Category: {obs.category_display} | Effective: {obs.effective_datetime}
-                                </li>
-                              ))}
-                              {groupedObservations[line].length === 0 && <li style={{ color: '#666' }}>None</li>}
-                              {groupedObservations[line].length > 50 && <li>... and {groupedObservations[line].length - 50} more</li>}
-                            </ul>
-                          </div>
-                        ))}
+                        <h3>Observations ({groupedObservations[activeServiceLine].length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {groupedObservations[activeServiceLine].slice(0, 50).map(obs => (
+                            <li key={obs.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{obs.code_display}</b> (Type: {obs.observation_type})<br />
+                              Value: {obs.value_quantity || obs.value_string || obs.value_display || obs.value_code || 'N/A'} {obs.value_unit}<br />
+                              Category: {obs.category_display} | Effective: {obs.effective_datetime}
+                            </li>
+                          ))}
+                          {groupedObservations[activeServiceLine].length === 0 && <li>None</li>}
+                          {groupedObservations[activeServiceLine].length > 50 && (
+                            <li>... and {groupedObservations[activeServiceLine].length - 50} more</li>
+                          )}
+                        </ul>
                       </div>
                     )}
 
                     {activeTab === 'procedures' && (
                       <div>
-                        <h3>Procedures ({procedures.length})</h3>
-                        {(['ICU','ED','Other'] as ServiceLine[]).map(line => (
-                          <div key={line} style={{ marginBottom: '14px' }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>{line}</div>
-                            <ul style={{ listStyle: 'none', padding: 0 }}>
-                              {groupedProcedures[line].map(proc => (
-                                <li key={proc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                                  <b>{proc.procedure_display}</b> (Code: {proc.procedure_code})<br />
-                                  Status: {proc.status} | Category: {proc.category_display}<br />
-                                  Performed: {proc.performed_datetime || proc.performed_period_start}<br />
-                                  Outcome: {proc.outcome_display} | Follow-up: {proc.follow_up_display}
-                                </li>
-                              ))}
-                              {groupedProcedures[line].length === 0 && <li style={{ color: '#666' }}>None</li>}
-                            </ul>
-                          </div>
-                        ))}
+                        <h3>Procedures ({groupedProcedures[activeServiceLine].length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {groupedProcedures[activeServiceLine].map(proc => (
+                            <li key={proc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{proc.procedure_display}</b> (Code: {proc.procedure_code})<br />
+                              Status: {proc.status} | Category: {proc.category_display}<br />
+                              Performed: {proc.performed_datetime || proc.performed_period_start}<br />
+                              Outcome: {proc.outcome_display} | Follow-up: {proc.follow_up_display}
+                            </li>
+                          ))}
+                          {groupedProcedures[activeServiceLine].length === 0 && <li>None</li>}
+                        </ul>
                       </div>
                     )}
 
                     {activeTab === 'specimens' && (
                       <div>
-                        <h3>Specimens ({specimens.length})</h3>
-                        {(['ICU','ED','Other'] as ServiceLine[]).map(line => (
-                          <div key={line} style={{ marginBottom: '14px' }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>{line}</div>
-                            <ul style={{ listStyle: 'none', padding: 0 }}>
-                              {groupedSpecimens[line].map(spec => (
-                                <li key={spec.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                                  <b>{spec.specimen_type_display}</b> (Code: {spec.specimen_type_code})<br />
-                                  Status: {spec.status} | Collection Method: {spec.collection_method_display}<br />
-                                  Body Site: {spec.body_site_display} | Collected: {spec.collected_datetime}<br />
-                                  Container: {spec.container_display} | Note: {spec.note || 'N/A'}
-                                </li>
-                              ))}
-                              {groupedSpecimens[line].length === 0 && <li style={{ color: '#666' }}>None</li>}
-                            </ul>
-                          </div>
-                        ))}
+                        <h3>Specimens ({groupedSpecimens[activeServiceLine].length})</h3>
+                        <ul style={{ listStyle: 'none', padding: 0 }}>
+                          {groupedSpecimens[activeServiceLine].map(spec => (
+                            <li key={spec.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                              <b>{spec.specimen_type_display}</b> (Code: {spec.specimen_type_code})<br />
+                              Status: {spec.status} | Collection Method: {spec.collection_method_display}<br />
+                              Body Site: {spec.body_site_display} | Collected: {spec.collected_datetime}<br />
+                              Container: {spec.container_display} | Note: {spec.note || 'N/A'}
+                            </li>
+                          ))}
+                          {groupedSpecimens[activeServiceLine].length === 0 && <li>None</li>}
+                        </ul>
                       </div>
                     )}
                   </div>
