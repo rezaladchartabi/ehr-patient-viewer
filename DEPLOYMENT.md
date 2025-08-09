@@ -219,3 +219,4 @@ If you encounter issues:
 - Frontend: Vercel Pro
 - Database: PostgreSQL on DigitalOcean
 - Monitoring: Sentry for error tracking
+

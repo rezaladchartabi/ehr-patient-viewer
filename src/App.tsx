@@ -1,5 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
+import { SidebarPatients } from './components/SidebarPatients';
+import { PatientHeaderBanner } from './components/PatientHeaderBanner';
+import { PatientTabs } from './components/PatientTabs';
+import { useTheme } from 'next-themes';
 
 interface Patient {
   id: string;
@@ -192,6 +196,9 @@ interface PatientSummary {
 const API_BASE = process.env.REACT_APP_API_URL || 'https://ehr-backend-87r9.onrender.com';
 
 function App() {
+  const { theme, setTheme } = useTheme();
+  const isDark = theme === 'dark';
+  const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [patientSummary, setPatientSummary] = useState<PatientSummary | null>(null);
@@ -400,37 +407,31 @@ function App() {
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '2rem' }}>
         {/* Patient List */}
-        <div style={{ minWidth: '300px' }}>
-          <h2>Patients</h2>
+        <div style={{ minWidth: '300px', width: '320px' }}>
           {loading && <div>Loading...</div>}
-          <ul style={{ listStyle: 'none', padding: 0 }}>
-            {patients.map(patient => (
-              <li key={patient.id} style={{ marginBottom: '5px' }}>
-                <button 
-                  onClick={() => selectPatient(patient)} 
-                  style={{ 
-                    fontWeight: selectedPatient?.id === patient.id ? 'bold' : 'normal',
-                    width: '100%',
-                    textAlign: 'left',
-                    padding: '8px',
-                    border: selectedPatient?.id === patient.id ? '2px solid #007bff' : '1px solid #ddd',
-                    borderRadius: '4px',
-                    backgroundColor: selectedPatient?.id === patient.id ? '#e3f2fd' : 'white',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {patient.family_name} ({patient.gender}, {patient.birth_date})
-                </button>
-              </li>
-            ))}
-          </ul>
+          <SidebarPatients
+            patients={patients}
+            selectedId={selectedPatient?.id}
+            onSelect={selectPatient}
+            renderItem={(p: Patient) => (
+              <div>
+                <div className="font-semibold">{p.family_name}</div>
+                <div className="text-xs text-gray-500 dark:text-neutral-400">{p.gender} • {p.birth_date} • {p.identifier}</div>
+              </div>
+            )}
+          />
         </div>
 
         {/* Patient Details */}
         <div style={{ flex: 1 }}>
           {selectedPatient && patientSummary && (
             <div>
-              <h2>Patient Details</h2>
+              <PatientHeaderBanner
+                title={selectedPatient.family_name}
+                subtitle={`${selectedPatient.gender} • ${selectedPatient.birth_date} • ${selectedPatient.identifier || ''}`}
+                onToggleTheme={toggleTheme}
+                isDark={isDark}
+              />
               <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
                 <tbody>
                   <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>ID</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.id}</td></tr>
@@ -488,8 +489,8 @@ function App() {
 
               {/* Tabs */}
               <div style={{ marginBottom: '20px' }}>
-                <div style={{ display: 'flex', borderBottom: '1px solid #ddd', marginBottom: '20px' }}>
-                  {[
+                <PatientTabs
+                  tabs={[
                     { id: 'summary', label: 'Summary' },
                     { id: 'conditions', label: 'Conditions' },
                     { id: 'medications', label: 'Medications' },
@@ -498,24 +499,11 @@ function App() {
                     { id: 'medication-requests', label: 'Med Requests' },
                     { id: 'observations', label: 'Observations' },
                     { id: 'procedures', label: 'Procedures' },
-                    { id: 'specimens', label: 'Specimens' }
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      style={{
-                        padding: '10px 20px',
-                        border: 'none',
-                        backgroundColor: activeTab === tab.id ? '#007bff' : 'transparent',
-                        color: activeTab === tab.id ? 'white' : '#333',
-                        cursor: 'pointer',
-                        borderBottom: activeTab === tab.id ? '2px solid #007bff' : 'none'
-                      }}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+                    { id: 'specimens', label: 'Specimens' },
+                  ]}
+                  active={activeTab}
+                  onChange={setActiveTab}
+                />
 
                 {/* Tab Content */}
                 {loading ? (
