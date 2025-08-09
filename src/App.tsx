@@ -217,6 +217,7 @@ function App() {
   const [searchResults, setSearchResults] = useState<Array<{ type: string; id: string; title: string; subtitle: string; patient_id: string }>>([]);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [searchPatients, setSearchPatients] = useState<Patient[]>([]);
+  const [showSearchOverlay, setShowSearchOverlay] = useState<boolean>(false);
 
   type ServiceLine = 'ICU' | 'ED' | 'Default';
   const [activeServiceLine, setActiveServiceLine] = useState<ServiceLine>('Default');
@@ -319,92 +320,130 @@ function App() {
       {error && <div style={{ color: 'red', padding: '10px', backgroundColor: '#ffebee', borderRadius: '4px', margin: '10px 0' }}>{error}</div>}
       
       {/* Global Search */}
-      <div style={{ margin: '10px 0 20px 0', display: 'flex', gap: '8px' }}>
-        <input
-          type="text"
-          placeholder="Search patients, conditions, medications, encounters, observations, procedures, specimens..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
+      <div className="relative z-50 mx-auto w-full max-w-[25vw]">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            placeholder="Search patients, conditions, medications, encounters, observations, procedures, specimens..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                setIsSearching(true);
+                setShowSearchOverlay(true);
+                Promise.all([
+                  fetch(`${API_BASE}/search?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
+                  fetch(`${API_BASE}/search/patients?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
+                ])
+                  .then(([items, patients]) => {
+                    setSearchResults(items);
+                    setSearchPatients(patients);
+                  })
+                  .finally(() => setIsSearching(false));
+              }
+            }}
+            className="w-full rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 shadow-soft focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            onClick={() => {
               setIsSearching(true);
-              fetch(`${API_BASE}/search?q=${encodeURIComponent(searchQuery)}`)
-                .then(res => res.json())
-                .then(data => setSearchResults(data))
+              setShowSearchOverlay(true);
+              Promise.all([
+                fetch(`${API_BASE}/search?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
+                fetch(`${API_BASE}/search/patients?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
+              ])
+                .then(([items, patients]) => {
+                  setSearchResults(items);
+                  setSearchPatients(patients);
+                })
                 .finally(() => setIsSearching(false));
-            }
-          }}
-          style={{ flex: 1, padding: '10px', fontSize: '16px' }}
-        />
-        <button
-          onClick={() => {
-            setIsSearching(true);
-            Promise.all([
-              fetch(`${API_BASE}/search?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
-              fetch(`${API_BASE}/search/patients?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
-            ])
-              .then(([items, patients]) => {
-                setSearchResults(items);
-                setSearchPatients(patients);
-              })
-              .finally(() => setIsSearching(false));
-          }}
-          style={{ padding: '10px 16px' }}
-        >
-          Search
-        </button>
+            }}
+            className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+          >
+            Search
+          </button>
+        </div>
+
+        {showSearchOverlay && (
+          <>
+            <div
+              className="fixed inset-0 bg-black/30 z-40"
+              onClick={() => setShowSearchOverlay(false)}
+            />
+            <div className="absolute left-0 right-0 mt-2 z-50 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-soft max-h-[60vh] overflow-y-auto">
+              <div className="border-b border-gray-200 dark:border-neutral-800 px-4 py-2 text-sm text-gray-500">
+                {isSearching ? 'Searching...' : 'Search Results'}
+              </div>
+              {!isSearching && (
+                <div className="p-2">
+                  {searchPatients.length > 0 && (
+                    <div className="mb-2">
+                      <div className="px-2 py-1 text-xs uppercase tracking-wide text-gray-500">Patients</div>
+                      <ul className="divide-y divide-gray-100 dark:divide-neutral-800">
+                        {searchPatients.map((p) => (
+                          <li
+                            key={p.id}
+                            className="cursor-pointer px-3 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800 rounded-md"
+                            onClick={() => {
+                              setShowSearchOverlay(false);
+                              selectPatient(p);
+                              setActiveTab('conditions');
+                            }}
+                          >
+                            <div className="font-medium">{p.family_name}</div>
+                            <div className="text-xs text-gray-500">{p.gender} • {p.birth_date} • {p.identifier}</div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {searchResults.length > 0 && (
+                    <div>
+                      <div className="px-2 py-1 text-xs uppercase tracking-wide text-gray-500">Items</div>
+                      <ul className="divide-y divide-gray-100 dark:divide-neutral-800">
+                        {searchResults.map((r) => (
+                          <li
+                            key={`${r.type}-${r.id}`}
+                            className="cursor-pointer px-3 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800 rounded-md"
+                            onClick={() => {
+                              const patient = patients.find(p => p.id === r.patient_id || p.id === r.id);
+                              if (patient) {
+                                setShowSearchOverlay(false);
+                                selectPatient(patient);
+                                const tabMap: Record<string, string> = {
+                                  'patient': 'conditions',
+                                  'condition': 'conditions',
+                                  'medication': 'medications',
+                                  'encounter': 'encounters',
+                                  'medication-administration': 'medication-administrations',
+                                  'medication-request': 'medication-requests',
+                                  'observation': 'observations',
+                                  'procedure': 'procedures',
+                                  'specimen': 'specimens',
+                                };
+                                const t = tabMap[r.type] || 'conditions';
+                                setActiveTab(t);
+                              }
+                            }}
+                          >
+                            <div className="font-medium">{r.title}</div>
+                            <div className="text-xs text-gray-500">{r.type} • {r.subtitle}</div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {searchPatients.length === 0 && searchResults.length === 0 && (
+                    <div className="px-3 py-4 text-sm text-gray-500">No results</div>
+                  )}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
-
-      {isSearching && <div>Searching...</div>}
-      {searchPatients.length > 0 && (
-        <div style={{ marginBottom: '20px' }}>
-          <h3>Matched Patients ({searchPatients.length})</h3>
-          <ul style={{ listStyle: 'none', padding: 0 }}>
-            {searchPatients.map((p) => (
-              <li key={p.id} style={{ padding: '8px', border: '1px solid #ddd', marginBottom: '6px', borderRadius: '4px', cursor: 'pointer' }}
-                  onClick={() => selectPatient(p)}
-              >
-                <div style={{ fontWeight: 'bold' }}>{p.family_name}</div>
-                <div style={{ fontSize: '12px', color: '#666' }}>{p.gender} • {p.birth_date} • {p.identifier}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {searchResults.length > 0 && (
-        <div style={{ marginBottom: '20px' }}>
-          <h3>Search Results ({searchResults.length})</h3>
-          <ul style={{ listStyle: 'none', padding: 0 }}>
-            {searchResults.map((r) => (
-              <li key={`${r.type}-${r.id}`} style={{ padding: '8px', border: '1px solid #ddd', marginBottom: '6px', borderRadius: '4px', cursor: 'pointer' }}
-                  onClick={() => {
-                    const patient = patients.find(p => p.id === r.patient_id || p.id === r.id);
-                    if (patient) {
-                      selectPatient(patient);
-                      const tabMap: Record<string, string> = {
-                        'patient': 'conditions',
-                        'condition': 'conditions',
-                        'medication': 'medications',
-                        'encounter': 'encounters',
-                        'medication-administration': 'medication-administrations',
-                        'medication-request': 'medication-requests',
-                        'observation': 'observations',
-                        'procedure': 'procedures',
-                        'specimen': 'specimens',
-                      };
-                      const t = tabMap[r.type] || 'conditions';
-                      setActiveTab(t);
-                    }
-                  }}
-              >
-                <div style={{ fontWeight: 'bold' }}>{r.title}</div>
-                <div style={{ fontSize: '12px', color: '#666' }}>{r.type} • {r.subtitle}</div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '2rem' }}>
         {/* Patient List */}
