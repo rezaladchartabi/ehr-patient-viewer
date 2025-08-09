@@ -280,7 +280,7 @@ function App() {
     setSelectedPatient(patient);
     setLoading(true);
     setError(null);
-    setActiveTab('summary');
+    setActiveTab('conditions');
     
     // Fetch patient summary
     fetch(`${API_BASE}/patients/${patient.id}/summary`)
