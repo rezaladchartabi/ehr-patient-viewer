@@ -270,6 +270,9 @@ function App() {
       .then(data => {
         setPatients(data);
         setLoading(false);
+        if (Array.isArray(data) && data.length > 0) {
+          selectPatient(data[0]);
+        }
       })
       .catch(err => {
         setError('Failed to fetch patients');
@@ -319,8 +322,8 @@ function App() {
       <h1>EHR Patient Viewer</h1>
       {error && <div style={{ color: 'red', padding: '10px', backgroundColor: '#ffebee', borderRadius: '4px', margin: '10px 0' }}>{error}</div>}
       
-      {/* Global Search */}
-      <div className="relative z-50 mx-auto w-full max-w-[25vw]">
+      {/* Global Search (right-aligned) */}
+      <div className="relative z-50 ml-auto w-full max-w-[25vw]">
         <div className="flex gap-2">
           <input
             type="text"
