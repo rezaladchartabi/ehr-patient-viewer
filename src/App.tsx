@@ -206,6 +206,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>('summary');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<Array<{ type: string; id: string; title: string; subtitle: string; patient_id: string }>>([]);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
 
   useEffect(() => {
     setLoading(true);
@@ -263,6 +266,73 @@ function App() {
       <h1>EHR Patient Viewer</h1>
       {error && <div style={{ color: 'red', padding: '10px', backgroundColor: '#ffebee', borderRadius: '4px', margin: '10px 0' }}>{error}</div>}
       
+      {/* Global Search */}
+      <div style={{ margin: '10px 0 20px 0', display: 'flex', gap: '8px' }}>
+        <input
+          type="text"
+          placeholder="Search patients, conditions, medications, encounters, observations, procedures, specimens..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              setIsSearching(true);
+              fetch(`${API_BASE}/search?q=${encodeURIComponent(searchQuery)}`)
+                .then(res => res.json())
+                .then(data => setSearchResults(data))
+                .finally(() => setIsSearching(false));
+            }
+          }}
+          style={{ flex: 1, padding: '10px', fontSize: '16px' }}
+        />
+        <button
+          onClick={() => {
+            setIsSearching(true);
+            fetch(`${API_BASE}/search?q=${encodeURIComponent(searchQuery)}`)
+              .then(res => res.json())
+              .then(data => setSearchResults(data))
+              .finally(() => setIsSearching(false));
+          }}
+          style={{ padding: '10px 16px' }}
+        >
+          Search
+        </button>
+      </div>
+
+      {isSearching && <div>Searching...</div>}
+      {searchResults.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <h3>Search Results ({searchResults.length})</h3>
+          <ul style={{ listStyle: 'none', padding: 0 }}>
+            {searchResults.map((r) => (
+              <li key={`${r.type}-${r.id}`} style={{ padding: '8px', border: '1px solid #ddd', marginBottom: '6px', borderRadius: '4px', cursor: 'pointer' }}
+                  onClick={() => {
+                    const patient = patients.find(p => p.id === r.patient_id || p.id === r.id);
+                    if (patient) {
+                      selectPatient(patient);
+                      const tabMap: Record<string, string> = {
+                        'patient': 'summary',
+                        'condition': 'conditions',
+                        'medication': 'medications',
+                        'encounter': 'encounters',
+                        'medication-administration': 'medication-administrations',
+                        'medication-request': 'medication-requests',
+                        'observation': 'observations',
+                        'procedure': 'procedures',
+                        'specimen': 'specimens',
+                      };
+                      const t = tabMap[r.type] || 'summary';
+                      setActiveTab(t);
+                    }
+                  }}
+              >
+                <div style={{ fontWeight: 'bold' }}>{r.title}</div>
+                <div style={{ fontSize: '12px', color: '#666' }}>{r.type} • {r.subtitle}</div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '2rem' }}>
         {/* Patient List */}
         <div style={{ minWidth: '300px' }}>

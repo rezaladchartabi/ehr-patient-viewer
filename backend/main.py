@@ -28,6 +28,154 @@ def get_db_connection():
 def read_root():
     return {"message": "EHR System API is running"}
 
+@app.get("/search", response_model=List[Dict])
+def global_search(q: str, limit: int = 50) -> List[Dict]:
+    """
+    Simple global search across multiple resources. Uses case-insensitive LIKE
+    matching on commonly searched columns and returns a unified result shape.
+    """
+    if not q:
+        return []
+
+    search_term = f"%{q}%"
+    per_table_limit = max(5, limit // 7)
+
+    conn = get_db_connection()
+    cursor = conn.cursor()
+
+    results: List[Dict] = []
+
+    # Patients
+    cursor.execute(
+        """
+        SELECT 'patient' as type, id, family_name as title,
+               (COALESCE(identifier,'') || ' • ' || COALESCE(gender,'') || ' • ' || COALESCE(birth_date,'')) as subtitle,
+               id as patient_id
+        FROM patient
+        WHERE family_name LIKE ? OR identifier LIKE ? OR id LIKE ?
+        LIMIT ?
+        """,
+        (search_term, search_term, search_term, per_table_limit),
+    )
+    results.extend([dict(row) for row in cursor.fetchall()])
+
+    # Conditions
+    cursor.execute(
+        """
+        SELECT 'condition' as type, id, code_display as title,
+               (COALESCE(code,'') || ' • ' || COALESCE(category,'')) as subtitle,
+               patient_id
+        FROM condition
+        WHERE code_display LIKE ? OR code LIKE ? OR category LIKE ?
+        LIMIT ?
+        """,
+        (search_term, search_term, search_term, per_table_limit),
+    )
+    results.extend([dict(row) for row in cursor.fetchall()])
+
+    # Medications (Dispense)
+    cursor.execute(
+        """
+        SELECT 'medication' as type, id, medication_display as title,
+               (COALESCE(medication_code,'') || ' • ' || COALESCE(status,'')) as subtitle,
+               patient_id
+        FROM medication
+        WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?
+        LIMIT ?
+        """,
+        (search_term, search_term, search_term, per_table_limit),
+    )
+    results.extend([dict(row) for row in cursor.fetchall()])
+
+    # Encounters
+    cursor.execute(
+        """
+        SELECT 'encounter' as type, id, class_display as title,
+               (COALESCE(encounter_type,'') || ' • ' || COALESCE(status,'')) as subtitle,
+               patient_id
+        FROM encounter
+        WHERE class_display LIKE ? OR encounter_type LIKE ? OR status LIKE ?
+        LIMIT ?
+        """,
+        (search_term, search_term, search_term, per_table_limit),
+    )
+    results.extend([dict(row) for row in cursor.fetchall()])
+
+    # Medication administrations
+    cursor.execute(
+        """
+        SELECT 'medication-administration' as type, id, medication_display as title,
+               (COALESCE(status,'') || ' • ' || COALESCE(route_code,'')) as subtitle,
+               patient_id
+        FROM medication_administration
+        WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?
+        LIMIT ?
+        """,
+        (search_term, search_term, search_term, per_table_limit),
+    )
+    results.extend([dict(row) for row in cursor.fetchall()])
+
+    # Medication requests
+    cursor.execute(
+        """
+        SELECT 'medication-request' as type, id, medication_display as title,
+               (COALESCE(status,'') || ' • ' || COALESCE(priority,'')) as subtitle,
+               patient_id
+        FROM medication_request
+        WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?
+        LIMIT ?
+        """,
+        (search_term, search_term, search_term, per_table_limit),
+    )
+    results.extend([dict(row) for row in cursor.fetchall()])
+
+    # Observations
+    cursor.execute(
+        """
+        SELECT 'observation' as type, id, code_display as title,
+               (COALESCE(observation_type,'') || ' • ' || COALESCE(status,'')) as subtitle,
+               patient_id
+        FROM observation
+        WHERE code_display LIKE ? OR code LIKE ? OR observation_type LIKE ?
+        LIMIT ?
+        """,
+        (search_term, search_term, search_term, per_table_limit),
+    )
+    results.extend([dict(row) for row in cursor.fetchall()])
+
+    # Procedures
+    cursor.execute(
+        """
+        SELECT 'procedure' as type, id, procedure_display as title,
+               (COALESCE(procedure_code,'') || ' • ' || COALESCE(status,'')) as subtitle,
+               patient_id
+        FROM procedure
+        WHERE procedure_display LIKE ? OR procedure_code LIKE ? OR status LIKE ?
+        LIMIT ?
+        """,
+        (search_term, search_term, search_term, per_table_limit),
+    )
+    results.extend([dict(row) for row in cursor.fetchall()])
+
+    # Specimens
+    cursor.execute(
+        """
+        SELECT 'specimen' as type, id, specimen_type_display as title,
+               (COALESCE(status,'') || ' • ' || COALESCE(body_site_display,'')) as subtitle,
+               patient_id
+        FROM specimen
+        WHERE specimen_type_display LIKE ? OR body_site_display LIKE ? OR status LIKE ?
+        LIMIT ?
+        """,
+        (search_term, search_term, search_term, per_table_limit),
+    )
+    results.extend([dict(row) for row in cursor.fetchall()])
+
+    conn.close()
+
+    # Trim to global limit
+    return results[:limit]
+
 @app.get("/patients", response_model=List[Dict])
 def list_patients():
     conn = get_db_connection()
