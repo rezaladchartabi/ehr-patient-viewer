@@ -212,21 +212,21 @@ function App() {
   const [specimens, setSpecimens] = useState<Specimen[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<string>('summary');
+  const [activeTab, setActiveTab] = useState<string>('conditions');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [searchResults, setSearchResults] = useState<Array<{ type: string; id: string; title: string; subtitle: string; patient_id: string }>>([]);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [searchPatients, setSearchPatients] = useState<Patient[]>([]);
 
-  type ServiceLine = 'ICU' | 'ED' | 'Other';
-  const [activeServiceLine, setActiveServiceLine] = useState<ServiceLine>('Other');
+  type ServiceLine = 'ICU' | 'ED' | 'Default';
+  const [activeServiceLine, setActiveServiceLine] = useState<ServiceLine>('Default');
 
   const getServiceLineFromEncounter = (enc: Encounter): ServiceLine => {
-    if (!enc) return 'Other';
+    if (!enc) return 'Default';
     const type = (enc.encounter_type || '').toLowerCase();
     if (type === 'icu') return 'ICU';
     if (type === 'emergency') return 'ED';
-    return 'Other';
+    return 'Default';
   };
 
   const encounterIdToServiceLine: Record<string, ServiceLine> = useMemo(() => {
@@ -238,16 +238,16 @@ function App() {
   }, [encounters]);
 
   const groupItemsByServiceLine = <T extends { encounter_id?: string }>(items: T[]): Record<ServiceLine, T[]> => {
-    const groups: Record<ServiceLine, T[]> = { ICU: [], ED: [], Other: [] };
+    const groups: Record<ServiceLine, T[]> = { ICU: [], ED: [], Default: [] };
     for (const item of items) {
-      const line = item.encounter_id ? (encounterIdToServiceLine[item.encounter_id] || 'Other') : 'Other';
+      const line = item.encounter_id ? (encounterIdToServiceLine[item.encounter_id] || 'Default') : 'Default';
       groups[line].push(item);
     }
     return groups;
   };
 
   const groupedEncounters = useMemo(() => {
-    const groups: Record<ServiceLine, Encounter[]> = { ICU: [], ED: [], Other: [] };
+    const groups: Record<ServiceLine, Encounter[]> = { ICU: [], ED: [], Default: [] };
     for (const enc of encounters) {
       groups[getServiceLineFromEncounter(enc)].push(enc);
     }
@@ -383,7 +383,7 @@ function App() {
                     if (patient) {
                       selectPatient(patient);
                       const tabMap: Record<string, string> = {
-                        'patient': 'summary',
+                        'patient': 'conditions',
                         'condition': 'conditions',
                         'medication': 'medications',
                         'encounter': 'encounters',
@@ -393,7 +393,7 @@ function App() {
                         'procedure': 'procedures',
                         'specimen': 'specimens',
                       };
-                      const t = tabMap[r.type] || 'summary';
+                      const t = tabMap[r.type] || 'conditions';
                       setActiveTab(t);
                     }
                   }}
@@ -449,51 +449,14 @@ function App() {
                 </tbody>
               </table>
 
-              {/* Summary Dashboard */}
-              <div style={{ marginBottom: '20px' }}>
-                <h3>Data Summary</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px' }}>
-                  <div style={{ padding: '10px', backgroundColor: '#e8f5e8', borderRadius: '4px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#2e7d32' }}>{patientSummary.summary.conditions}</div>
-                    <div>Conditions</div>
-                  </div>
-                  <div style={{ padding: '10px', backgroundColor: '#fff3e0', borderRadius: '4px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#f57c00' }}>{patientSummary.summary.medications}</div>
-                    <div>Medications</div>
-                  </div>
-                  <div style={{ padding: '10px', backgroundColor: '#e3f2fd', borderRadius: '4px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1976d2' }}>{patientSummary.summary.encounters}</div>
-                    <div>Encounters</div>
-                  </div>
-                  <div style={{ padding: '10px', backgroundColor: '#fce4ec', borderRadius: '4px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#c2185b' }}>{patientSummary.summary.medication_administrations}</div>
-                    <div>Med Admin</div>
-                  </div>
-                  <div style={{ padding: '10px', backgroundColor: '#f1f8e9', borderRadius: '4px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#388e3c' }}>{patientSummary.summary.medication_requests}</div>
-                    <div>Med Requests</div>
-                  </div>
-                  <div style={{ padding: '10px', backgroundColor: '#fff8e1', borderRadius: '4px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#fbc02d' }}>{patientSummary.summary.observations}</div>
-                    <div>Observations</div>
-                  </div>
-                  <div style={{ padding: '10px', backgroundColor: '#e8eaf6', borderRadius: '4px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#3f51b5' }}>{patientSummary.summary.procedures}</div>
-                    <div>Procedures</div>
-                  </div>
-                  <div style={{ padding: '10px', backgroundColor: '#e0f2f1', borderRadius: '4px', textAlign: 'center' }}>
-                    <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#00695c' }}>{patientSummary.summary.specimens}</div>
-                    <div>Specimens</div>
-                  </div>
-                </div>
-              </div>
+              
 
               {/* Tabs */}
               <div style={{ marginBottom: '20px' }}>
                 <div style={{ marginBottom: '10px' }}>
                   <PatientTabs
                     tabs={[
-                      { id: 'Other', label: 'Other' },
+                      { id: 'Default', label: 'Default' },
                       { id: 'ED', label: 'ED' },
                       { id: 'ICU', label: 'ICU' },
                     ]}
@@ -503,7 +466,6 @@ function App() {
                 </div>
                 <PatientTabs
                   tabs={[
-                    { id: 'summary', label: 'Summary' },
                     { id: 'conditions', label: 'Conditions' },
                     { id: 'medications', label: 'Medications' },
                     { id: 'encounters', label: 'Encounters' },
