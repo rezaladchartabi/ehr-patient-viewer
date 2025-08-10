@@ -192,7 +192,7 @@ interface PatientSummary {
   };
 }
 
-const API_BASE = process.env.REACT_APP_API_URL || 'https://ehr-backend-87r9.onrender.com';
+const API_BASE = process.env.REACT_APP_API_URL || 'https://gel-landscapes-impaired-vitamin.trycloudflare.com';
 
 function App() {
   const { theme, setTheme } = useTheme();
@@ -249,13 +249,28 @@ function App() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_BASE}/patients`)
+    fetch(`${API_BASE}/Patient?_count=50`)
       .then(res => res.json())
       .then(data => {
-        setPatients(data);
+        // Extract patients from FHIR Bundle
+        const patients = data.entry ? data.entry.map((entry: any) => ({
+          id: entry.resource.id,
+          family_name: entry.resource.name?.[0]?.family || 'Unknown',
+          gender: entry.resource.gender || 'Unknown',
+          birth_date: entry.resource.birthDate || 'Unknown',
+          race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.valueCodeableConcept?.text,
+          ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')?.valueCodeableConcept?.text,
+          birth_sex: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex')?.valueCode,
+          identifier: entry.resource.identifier?.[0]?.value,
+          marital_status: entry.resource.maritalStatus?.text,
+          deceased_date: entry.resource.deceasedDateTime,
+          managing_organization: entry.resource.managingOrganization?.reference
+        })) : [];
+        
+        setPatients(patients);
         setLoading(false);
-        if (Array.isArray(data) && data.length > 0) {
-          selectPatient(data[0]);
+        if (patients.length > 0) {
+          selectPatient(patients[0]);
         }
       })
       .catch(err => {
@@ -270,34 +285,228 @@ function App() {
     setError(null);
     setActiveTab('conditions');
     
-    // Fetch patient summary
-    fetch(`${API_BASE}/patients/${patient.id}/summary`)
-      .then(res => res.json())
-      .then(data => {
-        setPatientSummary(data);
+    // Fetch patient summary (we'll build this from individual resource counts)
+    Promise.all([
+      fetch(`${API_BASE}/Condition?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
+      fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
+      fetch(`${API_BASE}/Encounter?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
+      fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
+      fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
+      fetch(`${API_BASE}/Observation?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
+      fetch(`${API_BASE}/Procedure?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
+      fetch(`${API_BASE}/Specimen?patient=Patient/${patient.id}&_count=1`).then(r => r.json())
+    ])
+      .then(([conditions, medications, encounters, medAdmins, medRequests, observations, procedures, specimens]) => {
+        const summary = {
+          patient,
+          summary: {
+            conditions: conditions.total || 0,
+            medications: medications.total || 0,
+            encounters: encounters.total || 0,
+            medication_administrations: medAdmins.total || 0,
+            medication_requests: medRequests.total || 0,
+            observations: observations.total || 0,
+            procedures: procedures.total || 0,
+            specimens: specimens.total || 0,
+          }
+        };
+        setPatientSummary(summary);
       })
       .catch(err => {
         setError('Failed to fetch patient summary');
       });
     
-    // Fetch all data types
+    // Fetch all data types using FHIR endpoints
     const fetchPromises = [
-      fetch(`${API_BASE}/patients/${patient.id}/conditions`).then(res => res.json()).then(setConditions).catch(() => setConditions([])),
-      fetch(`${API_BASE}/patients/${patient.id}/medications`).then(res => res.json()).then(setMedications).catch(() => setMedications([])),
-      fetch(`${API_BASE}/patients/${patient.id}/encounters`).then(res => res.json()).then((encs) => {
-        setEncounters(encs);
-        if (Array.isArray(encs) && encs.length > 0) {
-          const sorted = [...encs].sort((a, b) => Date.parse(b.start_date || b.end_date || '') - Date.parse(a.start_date || a.end_date || ''));
+      fetch(`${API_BASE}/Condition?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+        const conditions = data.entry ? data.entry.map((entry: any) => ({
+          id: entry.resource.id,
+          code: entry.resource.code?.coding?.[0]?.code || '',
+          code_system: entry.resource.code?.coding?.[0]?.system || '',
+          code_display: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || '',
+          patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+          category: entry.resource.category?.[0]?.coding?.[0]?.display || '',
+          encounter_id: entry.resource.encounter?.reference?.split('/')[1] || '',
+          status: entry.resource.clinicalStatus?.coding?.[0]?.code || ''
+        })) : [];
+        setConditions(conditions);
+      }).catch(() => setConditions([])),
+      
+      fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+        const medications = data.entry ? data.entry.map((entry: any) => ({
+          id: entry.resource.id,
+          patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+          medication_code: entry.resource.medicationCodeableConcept?.coding?.[0]?.code || '',
+          medication_display: entry.resource.medicationCodeableConcept?.text || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || '',
+          medication_system: entry.resource.medicationCodeableConcept?.coding?.[0]?.system || '',
+          status: entry.resource.status || '',
+          quantity: entry.resource.dispenseRequest?.quantity?.value || 0,
+          quantity_unit: entry.resource.dispenseRequest?.quantity?.unit || '',
+          days_supply: entry.resource.dispenseRequest?.expectedSupplyDuration?.value || 0,
+          dispense_date: entry.resource.authoredOn || '',
+          encounter_id: entry.resource.encounter?.reference?.split('/')[1] || ''
+        })) : [];
+        setMedications(medications);
+      }).catch(() => setMedications([])),
+      
+      fetch(`${API_BASE}/Encounter?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+        const encounters = data.entry ? data.entry.map((entry: any) => ({
+          id: entry.resource.id,
+          patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+          encounter_type: entry.resource.class?.code || '',
+          status: entry.resource.status || '',
+          start_date: entry.resource.period?.start || '',
+          end_date: entry.resource.period?.end || '',
+          class_code: entry.resource.class?.code || '',
+          class_display: entry.resource.class?.display || '',
+          service_type: entry.resource.serviceType?.coding?.[0]?.display || '',
+          priority_code: entry.resource.priority?.coding?.[0]?.code || '',
+          priority_display: entry.resource.priority?.coding?.[0]?.display || '',
+          diagnosis_condition: entry.resource.diagnosis?.[0]?.condition?.reference || '',
+          diagnosis_use: entry.resource.diagnosis?.[0]?.use?.coding?.[0]?.code || '',
+          diagnosis_rank: entry.resource.diagnosis?.[0]?.rank || 0,
+          hospitalization_admit_source_code: entry.resource.hospitalization?.admitSource?.coding?.[0]?.code || '',
+          hospitalization_admit_source_display: entry.resource.hospitalization?.admitSource?.coding?.[0]?.display || '',
+          hospitalization_discharge_disposition_code: entry.resource.hospitalization?.dischargeDisposition?.coding?.[0]?.code || '',
+          hospitalization_discharge_disposition_display: entry.resource.hospitalization?.dischargeDisposition?.coding?.[0]?.display || ''
+        })) : [];
+        setEncounters(encounters);
+        if (encounters.length > 0) {
+          const sorted = [...encounters].sort((a, b) => Date.parse(b.start_date || b.end_date || '') - Date.parse(a.start_date || a.end_date || ''));
           setSelectedEncounterId(sorted[0]?.id || null);
         } else {
           setSelectedEncounterId(null);
         }
       }).catch(() => setEncounters([])),
-      fetch(`${API_BASE}/patients/${patient.id}/medication-administrations`).then(res => res.json()).then(setMedicationAdministrations).catch(() => setMedicationAdministrations([])),
-      fetch(`${API_BASE}/patients/${patient.id}/medication-requests`).then(res => res.json()).then(setMedicationRequests).catch(() => setMedicationRequests([])),
-      fetch(`${API_BASE}/patients/${patient.id}/observations`).then(res => res.json()).then(setObservations).catch(() => setObservations([])),
-      fetch(`${API_BASE}/patients/${patient.id}/procedures`).then(res => res.json()).then(setProcedures).catch(() => setProcedures([])),
-      fetch(`${API_BASE}/patients/${patient.id}/specimens`).then(res => res.json()).then(setSpecimens).catch(() => setSpecimens([]))
+      
+      fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+        const administrations = data.entry ? data.entry.map((entry: any) => ({
+          id: entry.resource.id,
+          patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+          encounter_id: entry.resource.context?.reference?.split('/')[1] || '',
+          medication_code: entry.resource.medicationCodeableConcept?.coding?.[0]?.code || '',
+          medication_display: entry.resource.medicationCodeableConcept?.text || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || '',
+          medication_system: entry.resource.medicationCodeableConcept?.coding?.[0]?.system || '',
+          status: entry.resource.status || '',
+          effective_start: entry.resource.effectiveDateTime || entry.resource.effectivePeriod?.start || '',
+          effective_end: entry.resource.effectivePeriod?.end || '',
+          dosage_quantity: entry.resource.dosage?.dose?.value || 0,
+          dosage_unit: entry.resource.dosage?.dose?.unit || '',
+          route_code: entry.resource.dosage?.route?.coding?.[0]?.code || '',
+          route_display: entry.resource.dosage?.route?.coding?.[0]?.display || '',
+          site_code: entry.resource.dosage?.site?.coding?.[0]?.code || '',
+          site_display: entry.resource.dosage?.site?.coding?.[0]?.display || '',
+          method_code: entry.resource.dosage?.method?.coding?.[0]?.code || '',
+          method_display: entry.resource.dosage?.method?.coding?.[0]?.display || '',
+          reason_code: entry.resource.reasonCode?.[0]?.coding?.[0]?.code || '',
+          reason_display: entry.resource.reasonCode?.[0]?.coding?.[0]?.display || ''
+        })) : [];
+        setMedicationAdministrations(administrations);
+      }).catch(() => setMedicationAdministrations([])),
+      
+      fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+        const requests = data.entry ? data.entry.map((entry: any) => ({
+          id: entry.resource.id,
+          patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+          encounter_id: entry.resource.encounter?.reference?.split('/')[1] || '',
+          medication_code: entry.resource.medicationCodeableConcept?.coding?.[0]?.code || '',
+          medication_display: entry.resource.medicationCodeableConcept?.text || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || '',
+          medication_system: entry.resource.medicationCodeableConcept?.coding?.[0]?.system || '',
+          status: entry.resource.status || '',
+          intent: entry.resource.intent || '',
+          priority: entry.resource.priority || '',
+          authored_on: entry.resource.authoredOn || '',
+          dosage_quantity: entry.resource.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.value || 0,
+          dosage_unit: entry.resource.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.unit || '',
+          frequency_code: entry.resource.dosageInstruction?.[0]?.timing?.repeat?.frequency || '',
+          frequency_display: entry.resource.dosageInstruction?.[0]?.timing?.code?.text || '',
+          route_code: entry.resource.dosageInstruction?.[0]?.route?.coding?.[0]?.code || '',
+          route_display: entry.resource.dosageInstruction?.[0]?.route?.coding?.[0]?.display || '',
+          reason_code: entry.resource.reasonCode?.[0]?.coding?.[0]?.code || '',
+          reason_display: entry.resource.reasonCode?.[0]?.coding?.[0]?.display || ''
+        })) : [];
+        setMedicationRequests(requests);
+      }).catch(() => setMedicationRequests([])),
+      
+      fetch(`${API_BASE}/Observation?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+        const observations = data.entry ? data.entry.map((entry: any) => ({
+          id: entry.resource.id,
+          patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+          encounter_id: entry.resource.encounter?.reference?.split('/')[1] || '',
+          observation_type: entry.resource.category?.[0]?.coding?.[0]?.display || '',
+          code: entry.resource.code?.coding?.[0]?.code || '',
+          code_display: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || '',
+          code_system: entry.resource.code?.coding?.[0]?.system || '',
+          status: entry.resource.status || '',
+          effective_datetime: entry.resource.effectiveDateTime || '',
+          issued_datetime: entry.resource.issued || '',
+          value_quantity: entry.resource.valueQuantity?.value || 0,
+          value_unit: entry.resource.valueQuantity?.unit || '',
+          value_code: entry.resource.valueCodeableConcept?.coding?.[0]?.code || '',
+          value_display: entry.resource.valueCodeableConcept?.coding?.[0]?.display || '',
+          value_string: entry.resource.valueString || '',
+          value_boolean: entry.resource.valueBoolean || false,
+          value_datetime: entry.resource.valueDateTime || '',
+          category_code: entry.resource.category?.[0]?.coding?.[0]?.code || '',
+          category_display: entry.resource.category?.[0]?.coding?.[0]?.display || '',
+          interpretation_code: entry.resource.interpretation?.[0]?.coding?.[0]?.code || '',
+          interpretation_display: entry.resource.interpretation?.[0]?.coding?.[0]?.display || '',
+          reference_range_low: entry.resource.referenceRange?.[0]?.low?.value || 0,
+          reference_range_high: entry.resource.referenceRange?.[0]?.high?.value || 0,
+          reference_range_unit: entry.resource.referenceRange?.[0]?.low?.unit || ''
+        })) : [];
+        setObservations(observations);
+      }).catch(() => setObservations([])),
+      
+      fetch(`${API_BASE}/Procedure?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+        const procedures = data.entry ? data.entry.map((entry: any) => ({
+          id: entry.resource.id,
+          patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+          encounter_id: entry.resource.encounter?.reference?.split('/')[1] || '',
+          procedure_code: entry.resource.code?.coding?.[0]?.code || '',
+          procedure_display: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || '',
+          procedure_system: entry.resource.code?.coding?.[0]?.system || '',
+          status: entry.resource.status || '',
+          performed_datetime: entry.resource.performedDateTime || '',
+          performed_period_start: entry.resource.performedPeriod?.start || '',
+          performed_period_end: entry.resource.performedPeriod?.end || '',
+          category_code: entry.resource.category?.coding?.[0]?.code || '',
+          category_display: entry.resource.category?.coding?.[0]?.display || '',
+          reason_code: entry.resource.reasonCode?.[0]?.coding?.[0]?.code || '',
+          reason_display: entry.resource.reasonCode?.[0]?.coding?.[0]?.display || '',
+          outcome_code: entry.resource.outcome?.coding?.[0]?.code || '',
+          outcome_display: entry.resource.outcome?.coding?.[0]?.display || '',
+          complication_code: entry.resource.complication?.[0]?.coding?.[0]?.code || '',
+          complication_display: entry.resource.complication?.[0]?.coding?.[0]?.display || '',
+          follow_up_code: entry.resource.followUp?.[0]?.coding?.[0]?.code || '',
+          follow_up_display: entry.resource.followUp?.[0]?.coding?.[0]?.display || ''
+        })) : [];
+        setProcedures(procedures);
+      }).catch(() => setProcedures([])),
+      
+      fetch(`${API_BASE}/Specimen?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+        const specimens = data.entry ? data.entry.map((entry: any) => ({
+          id: entry.resource.id,
+          patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+          encounter_id: entry.resource.encounter?.reference?.split('/')[1] || '',
+          specimen_type_code: entry.resource.type?.coding?.[0]?.code || '',
+          specimen_type_display: entry.resource.type?.text || entry.resource.type?.coding?.[0]?.display || '',
+          specimen_type_system: entry.resource.type?.coding?.[0]?.system || '',
+          status: entry.resource.status || '',
+          collected_datetime: entry.resource.collection?.collectedDateTime || '',
+          received_datetime: entry.resource.receivedTime || '',
+          collection_method_code: entry.resource.collection?.method?.coding?.[0]?.code || '',
+          collection_method_display: entry.resource.collection?.method?.coding?.[0]?.display || '',
+          body_site_code: entry.resource.collection?.bodySite?.coding?.[0]?.code || '',
+          body_site_display: entry.resource.collection?.bodySite?.coding?.[0]?.display || '',
+          fasting_status_code: entry.resource.fastingStatus?.coding?.[0]?.code || '',
+          fasting_status_display: entry.resource.fastingStatus?.coding?.[0]?.display || '',
+          container_code: entry.resource.container?.[0]?.type?.coding?.[0]?.code || '',
+          container_display: entry.resource.container?.[0]?.type?.coding?.[0]?.display || '',
+          note: entry.resource.note?.[0]?.text || ''
+        })) : [];
+        setSpecimens(specimens);
+      }).catch(() => setSpecimens([]))
     ];
     
     Promise.all(fetchPromises)
@@ -327,12 +536,65 @@ function App() {
                 setIsSearching(true);
                 setShowSearchOverlay(true);
                 Promise.all([
-                  fetch(`${API_BASE}/search?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
-                  fetch(`${API_BASE}/search/patients?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
+                  fetch(`${API_BASE}/Patient?name=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
+                  fetch(`${API_BASE}/Condition?code=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
+                  fetch(`${API_BASE}/MedicationRequest?medication=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
+                  fetch(`${API_BASE}/Observation?code=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
                 ])
-                  .then(([items, patients]) => {
-                    setSearchResults(items);
-                    setSearchPatients(patients);
+                  .then(([patients, conditions, medications, observations]) => {
+                    // Process search results from FHIR
+                    const searchResults: Array<{ type: string; id: string; title: string; subtitle: string; patient_id: string }> = [];
+                    
+                    // Add conditions
+                    if (conditions.entry) {
+                      conditions.entry.forEach((entry: any) => {
+                        searchResults.push({
+                          type: 'condition',
+                          id: entry.resource.id,
+                          title: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || 'Condition',
+                          subtitle: entry.resource.category?.[0]?.coding?.[0]?.display || '',
+                          patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
+                        });
+                      });
+                    }
+                    
+                    // Add medications
+                    if (medications.entry) {
+                      medications.entry.forEach((entry: any) => {
+                        searchResults.push({
+                          type: 'medication-request',
+                          id: entry.resource.id,
+                          title: entry.resource.medicationCodeableConcept?.text || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || 'Medication',
+                          subtitle: entry.resource.status || '',
+                          patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
+                        });
+                      });
+                    }
+                    
+                    // Add observations
+                    if (observations.entry) {
+                      observations.entry.forEach((entry: any) => {
+                        searchResults.push({
+                          type: 'observation',
+                          id: entry.resource.id,
+                          title: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || 'Observation',
+                          subtitle: entry.resource.category?.[0]?.coding?.[0]?.display || '',
+                          patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
+                        });
+                      });
+                    }
+                    
+                    // Process patients
+                    const searchPatients = patients.entry ? patients.entry.map((entry: any) => ({
+                      id: entry.resource.id,
+                      family_name: entry.resource.name?.[0]?.family || 'Unknown',
+                      gender: entry.resource.gender || 'Unknown',
+                      birth_date: entry.resource.birthDate || 'Unknown',
+                      identifier: entry.resource.identifier?.[0]?.value || ''
+                    })) : [];
+                    
+                    setSearchResults(searchResults);
+                    setSearchPatients(searchPatients);
                   })
                   .finally(() => setIsSearching(false));
               }
@@ -344,12 +606,65 @@ function App() {
               setIsSearching(true);
               setShowSearchOverlay(true);
               Promise.all([
-                fetch(`${API_BASE}/search?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
-                fetch(`${API_BASE}/search/patients?q=${encodeURIComponent(searchQuery)}`).then(r => r.json()),
+                fetch(`${API_BASE}/Patient?name=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
+                fetch(`${API_BASE}/Condition?code=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
+                fetch(`${API_BASE}/MedicationRequest?medication=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
+                fetch(`${API_BASE}/Observation?code=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
               ])
-                .then(([items, patients]) => {
-                  setSearchResults(items);
-                  setSearchPatients(patients);
+                .then(([patients, conditions, medications, observations]) => {
+                  // Process search results from FHIR
+                  const searchResults: Array<{ type: string; id: string; title: string; subtitle: string; patient_id: string }> = [];
+                  
+                  // Add conditions
+                  if (conditions.entry) {
+                    conditions.entry.forEach((entry: any) => {
+                      searchResults.push({
+                        type: 'condition',
+                        id: entry.resource.id,
+                        title: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || 'Condition',
+                        subtitle: entry.resource.category?.[0]?.coding?.[0]?.display || '',
+                        patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
+                      });
+                    });
+                  }
+                  
+                  // Add medications
+                  if (medications.entry) {
+                    medications.entry.forEach((entry: any) => {
+                      searchResults.push({
+                        type: 'medication-request',
+                        id: entry.resource.id,
+                        title: entry.resource.medicationCodeableConcept?.text || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || 'Medication',
+                        subtitle: entry.resource.status || '',
+                        patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
+                      });
+                    });
+                  }
+                  
+                  // Add observations
+                  if (observations.entry) {
+                    observations.entry.forEach((entry: any) => {
+                      searchResults.push({
+                        type: 'observation',
+                        id: entry.resource.id,
+                        title: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || 'Observation',
+                        subtitle: entry.resource.category?.[0]?.coding?.[0]?.display || '',
+                        patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
+                      });
+                    });
+                  }
+                  
+                  // Process patients
+                  const searchPatients = patients.entry ? patients.entry.map((entry: any) => ({
+                    id: entry.resource.id,
+                    family_name: entry.resource.name?.[0]?.family || 'Unknown',
+                    gender: entry.resource.gender || 'Unknown',
+                    birth_date: entry.resource.birthDate || 'Unknown',
+                    identifier: entry.resource.identifier?.[0]?.value || ''
+                  })) : [];
+                  
+                  setSearchResults(searchResults);
+                  setSearchPatients(searchPatients);
                 })
                 .finally(() => setIsSearching(false));
             }}
