@@ -249,6 +249,7 @@ function App() {
 
   useEffect(() => {
     setLoading(true);
+    console.log('Fetching patients from:', API_BASE);
     fetch(`${API_BASE}/Patient?_count=200`)
       .then(res => res.json())
       .then(data => {
