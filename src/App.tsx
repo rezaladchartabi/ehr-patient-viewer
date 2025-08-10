@@ -486,7 +486,7 @@ function App() {
                     <li
                       key={enc.id}
                       className={"p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800 " + (selectedEncounterId === enc.id ? 'bg-blue-50 dark:bg-neutral-800/50' : '')}
-                      onClick={() => setSelectedEncounterId(enc.id)}
+                      onClick={() => setSelectedEncounterId(selectedEncounterId === enc.id ? null : enc.id)}
                     >
                       <div className="flex items-center justify-between">
                         <div>
@@ -495,109 +495,109 @@ function App() {
                         </div>
                         <div className="text-xs text-gray-500">{enc.priority_display}</div>
                       </div>
+                      {selectedEncounterId === enc.id && (
+                        <div className="mt-3 border-t border-gray-200 dark:border-neutral-800 pt-3">
+                          <PatientTabs
+                            tabs={[
+                              { id: 'conditions', label: 'Conditions' },
+                              { id: 'medications', label: 'Medications' },
+                              { id: 'medication-administrations', label: 'Med Admin' },
+                              { id: 'medication-requests', label: 'Med Requests' },
+                              { id: 'observations', label: 'Observations' },
+                              { id: 'procedures', label: 'Procedures' },
+                              { id: 'specimens', label: 'Specimens' },
+                            ]}
+                            active={activeTab}
+                            onChange={setActiveTab}
+                          />
+
+                          <div className="mt-3">
+                            {activeTab === 'conditions' && (
+                              <ul style={{ listStyle: 'none', padding: 0 }}>
+                                {conditions.filter(c => c.encounter_id === selectedEncounterId).map(cond => (
+                                  <li key={cond.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                                    <b>{cond.code_display}</b> (ICD: {cond.code}) • Category: {cond.category} • Status: {cond.status}
+                                  </li>
+                                ))}
+                                {conditions.filter(c => c.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                              </ul>
+                            )}
+
+                            {activeTab === 'medications' && (
+                              <ul style={{ listStyle: 'none', padding: 0 }}>
+                                {medications.filter(m => m.encounter_id === selectedEncounterId).map(med => (
+                                  <li key={med.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                                    <b>{med.medication_display}</b> (Code: {med.medication_code}) • Status: {med.status} • Qty: {med.quantity} {med.quantity_unit}
+                                  </li>
+                                ))}
+                                {medications.filter(m => m.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                              </ul>
+                            )}
+
+                            {activeTab === 'medication-administrations' && (
+                              <ul style={{ listStyle: 'none', padding: 0 }}>
+                                {medicationAdministrations.filter(a => a.encounter_id === selectedEncounterId).slice(0, 50).map(admin => (
+                                  <li key={admin.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                                    <b>{admin.medication_display}</b> • Status: {admin.status} • Dosage: {admin.dosage_quantity} {admin.dosage_unit}
+                                  </li>
+                                ))}
+                                {medicationAdministrations.filter(a => a.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                              </ul>
+                            )}
+
+                            {activeTab === 'medication-requests' && (
+                              <ul style={{ listStyle: 'none', padding: 0 }}>
+                                {medicationRequests.filter(r => r.encounter_id === selectedEncounterId).map(req => (
+                                  <li key={req.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                                    <b>{req.medication_display}</b> • Status: {req.status} • Priority: {req.priority}
+                                  </li>
+                                ))}
+                                {medicationRequests.filter(r => r.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                              </ul>
+                            )}
+
+                            {activeTab === 'observations' && (
+                              <ul style={{ listStyle: 'none', padding: 0 }}>
+                                {observations.filter(o => o.encounter_id === selectedEncounterId).slice(0, 50).map(obs => (
+                                  <li key={obs.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                                    <b>{obs.code_display}</b> • Value: {obs.value_quantity || obs.value_string || obs.value_display || obs.value_code || 'N/A'} {obs.value_unit}
+                                  </li>
+                                ))}
+                                {observations.filter(o => o.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                              </ul>
+                            )}
+
+                            {activeTab === 'procedures' && (
+                              <ul style={{ listStyle: 'none', padding: 0 }}>
+                                {procedures.filter(p => p.encounter_id === selectedEncounterId).map(proc => (
+                                  <li key={proc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                                    <b>{proc.procedure_display}</b> • Status: {proc.status}
+                                  </li>
+                                ))}
+                                {procedures.filter(p => p.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                              </ul>
+                            )}
+
+                            {activeTab === 'specimens' && (
+                              <ul style={{ listStyle: 'none', padding: 0 }}>
+                                {specimens.filter(s => s.encounter_id === selectedEncounterId).map(spec => (
+                                  <li key={spec.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                                    <b>{spec.specimen_type_display}</b> • Status: {spec.status}
+                                  </li>
+                                ))}
+                                {specimens.filter(s => s.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </li>
                   ))}
                   {sortedEncounters.length === 0 && <li className="p-3 text-sm text-gray-500">No encounters</li>}
                 </ul>
               </div>
 
-              {/* Encounter details tabs */}
-              {selectedEncounterId && (
-                <div>
-                  <PatientTabs
-                    tabs={[
-                      { id: 'conditions', label: 'Conditions' },
-                      { id: 'medications', label: 'Medications' },
-                      { id: 'medication-administrations', label: 'Med Admin' },
-                      { id: 'medication-requests', label: 'Med Requests' },
-                      { id: 'observations', label: 'Observations' },
-                      { id: 'procedures', label: 'Procedures' },
-                      { id: 'specimens', label: 'Specimens' },
-                    ]}
-                    active={activeTab}
-                    onChange={setActiveTab}
-                  />
-
-                  <div className="mt-4">
-                    {activeTab === 'conditions' && (
-                      <ul style={{ listStyle: 'none', padding: 0 }}>
-                        {conditions.filter(c => c.encounter_id === selectedEncounterId).map(cond => (
-                          <li key={cond.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                            <b>{cond.code_display}</b> (ICD: {cond.code}) • Category: {cond.category} • Status: {cond.status}
-                          </li>
-                        ))}
-                        {conditions.filter(c => c.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
-                      </ul>
-                    )}
-
-                    {activeTab === 'medications' && (
-                      <ul style={{ listStyle: 'none', padding: 0 }}>
-                        {medications.filter(m => m.encounter_id === selectedEncounterId).map(med => (
-                          <li key={med.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                            <b>{med.medication_display}</b> (Code: {med.medication_code}) • Status: {med.status} • Qty: {med.quantity} {med.quantity_unit}
-                          </li>
-                        ))}
-                        {medications.filter(m => m.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
-                      </ul>
-                    )}
-
-                    {activeTab === 'medication-administrations' && (
-                      <ul style={{ listStyle: 'none', padding: 0 }}>
-                        {medicationAdministrations.filter(a => a.encounter_id === selectedEncounterId).slice(0, 50).map(admin => (
-                          <li key={admin.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                            <b>{admin.medication_display}</b> • Status: {admin.status} • Dosage: {admin.dosage_quantity} {admin.dosage_unit}
-                          </li>
-                        ))}
-                        {medicationAdministrations.filter(a => a.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
-                      </ul>
-                    )}
-
-                    {activeTab === 'medication-requests' && (
-                      <ul style={{ listStyle: 'none', padding: 0 }}>
-                        {medicationRequests.filter(r => r.encounter_id === selectedEncounterId).map(req => (
-                          <li key={req.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                            <b>{req.medication_display}</b> • Status: {req.status} • Priority: {req.priority}
-                          </li>
-                        ))}
-                        {medicationRequests.filter(r => r.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
-                      </ul>
-                    )}
-
-                    {activeTab === 'observations' && (
-                      <ul style={{ listStyle: 'none', padding: 0 }}>
-                        {observations.filter(o => o.encounter_id === selectedEncounterId).slice(0, 50).map(obs => (
-                          <li key={obs.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                            <b>{obs.code_display}</b> • Value: {obs.value_quantity || obs.value_string || obs.value_display || obs.value_code || 'N/A'} {obs.value_unit}
-                          </li>
-                        ))}
-                        {observations.filter(o => o.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
-                      </ul>
-                    )}
-
-                    {activeTab === 'procedures' && (
-                      <ul style={{ listStyle: 'none', padding: 0 }}>
-                        {procedures.filter(p => p.encounter_id === selectedEncounterId).map(proc => (
-                          <li key={proc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                            <b>{proc.procedure_display}</b> • Status: {proc.status}
-                          </li>
-                        ))}
-                        {procedures.filter(p => p.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
-                      </ul>
-                    )}
-
-                    {activeTab === 'specimens' && (
-                      <ul style={{ listStyle: 'none', padding: 0 }}>
-                        {specimens.filter(s => s.encounter_id === selectedEncounterId).map(spec => (
-                          <li key={spec.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                            <b>{spec.specimen_type_display}</b> • Status: {spec.status}
-                          </li>
-                        ))}
-                        {specimens.filter(s => s.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
-                      </ul>
-                    )}
-                  </div>
-                </div>
-              )}
+              {/* Row-level details removed; now expanded inline in the encounter row */}
             </div>
           )}
         </div>
