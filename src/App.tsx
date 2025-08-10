@@ -482,16 +482,21 @@ function App() {
               <div className="mb-4">
                 <h2 className="text-lg font-semibold mb-2">Encounters</h2>
                 <ul className="divide-y divide-gray-200 dark:divide-neutral-800 rounded-lg border border-gray-200 dark:border-neutral-800 overflow-hidden">
-                  {sortedEncounters.map((enc) => (
+                  {sortedEncounters.map((enc, idx) => (
                     <li
                       key={enc.id}
                       className={"p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800 " + (selectedEncounterId === enc.id ? 'bg-blue-50 dark:bg-neutral-800/50' : '')}
                       onClick={() => setSelectedEncounterId(selectedEncounterId === enc.id ? null : enc.id)}
                     >
                       <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium">{enc.class_display || enc.encounter_type || 'Encounter'}</div>
-                          <div className="text-xs text-gray-500">{enc.start_date} {enc.end_date ? `- ${enc.end_date}` : ''} • {enc.status} • {enc.service_type || getServiceLineFromEncounter(enc)}</div>
+                        <div className="flex items-center gap-3">
+                          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 dark:bg-neutral-800 text-xs font-medium text-gray-700 dark:text-neutral-300">
+                            {idx + 1}
+                          </span>
+                          <div>
+                            <div className="font-medium">{enc.class_display || enc.encounter_type || 'Encounter'}</div>
+                            <div className="text-xs text-gray-500">{enc.start_date} {enc.end_date ? `- ${enc.end_date}` : ''} • {enc.status} • {enc.service_type || getServiceLineFromEncounter(enc)}</div>
+                          </div>
                         </div>
                         <div className="text-xs text-gray-500">{enc.priority_display}</div>
                       </div>
