@@ -270,7 +270,9 @@ function App() {
         setPatients(patients);
         setLoading(false);
         if (patients.length > 0) {
-          selectPatient(patients[0]);
+          // Try to find a patient with medication data, otherwise use the first one
+          const patientWithData = patients.find((p: Patient) => p.id === '03632093-8e46-5c64-8d8b-76ce07fa7b35') || patients[0];
+          selectPatient(patientWithData);
         }
       })
       .catch(err => {
@@ -380,6 +382,7 @@ function App() {
       }).catch(() => setEncounters([])),
       
              fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+         console.log('MedicationAdministration data for patient', patient.id, ':', data);
          const administrations = data.entry ? data.entry.map((entry: any) => ({
            id: entry.resource.id,
            patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
@@ -405,6 +408,7 @@ function App() {
        }).catch(() => setMedicationAdministrations([])),
       
              fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+         console.log('MedicationRequest data for patient', patient.id, ':', data);
          const requests = data.entry ? data.entry.map((entry: any) => ({
            id: entry.resource.id,
            patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
