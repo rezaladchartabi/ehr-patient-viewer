@@ -1,16 +1,23 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-import sqlite3
-from typing import List, Dict
+from fastapi.responses import JSONResponse
+import httpx
+import asyncio
+from typing import Dict, List, Optional
+import time
+import json
+from collections import defaultdict
 import os
 
-# Database path
-DB_PATH = os.path.join(os.path.dirname(__file__), "ehr_data.sqlite3")
+# Configuration
+FHIR_BASE_URL = "https://gel-landscapes-impaired-vitamin.trycloudflare.com/fhir"
+CACHE_TTL = 300  # 5 minutes cache
+RATE_LIMIT_REQUESTS = 100  # requests per minute
+RATE_LIMIT_WINDOW = 60  # seconds
 
-app = FastAPI(title="EHR System API", version="1.0.0")
+app = FastAPI(title="EHR FHIR Proxy", version="1.0.0")
 
-# Allow CORS for all origins (you can restrict this in production)
+# Allow CORS for all origins
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,482 +26,380 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+# Simple in-memory cache
+cache: Dict[str, Dict] = {}
+rate_limit_tracker: Dict[str, List[float]] = defaultdict(list)
+
+class RateLimiter:
+    def __init__(self, max_requests: int, window_seconds: int):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.requests = defaultdict(list)
+    
+    def is_allowed(self, client_id: str) -> bool:
+        now = time.time()
+        # Clean old requests outside the window
+        self.requests[client_id] = [
+            req_time for req_time in self.requests[client_id]
+            if now - req_time < self.window_seconds
+        ]
+        
+        # Check if under limit
+        if len(self.requests[client_id]) < self.max_requests:
+            self.requests[client_id].append(now)
+            return True
+        return False
+
+rate_limiter = RateLimiter(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW)
+
+def get_cache_key(method: str, path: str, params: str) -> str:
+    """Generate cache key from request details"""
+    return f"{method}:{path}:{params}"
+
+def is_cacheable(path: str) -> bool:
+    """Check if the endpoint should be cached"""
+    cacheable_endpoints = [
+        "/Patient",
+        "/Condition", 
+        "/MedicationRequest",
+        "/MedicationAdministration",
+        "/Encounter",
+        "/Observation",
+        "/Procedure",
+        "/Specimen"
+    ]
+    return any(path.startswith(endpoint) for endpoint in cacheable_endpoints)
+
+async def fetch_from_fhir(path: str, params: Dict = None) -> Dict:
+    """Fetch data from FHIR server"""
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        url = f"{FHIR_BASE_URL}{path}"
+        response = await client.get(url, params=params)
+        
+        if response.status_code != 200:
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=f"FHIR server error: {response.text}"
+            )
+        
+        return response.json()
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    """Rate limiting middleware"""
+    client_id = request.client.host if request.client else "unknown"
+    
+    if not rate_limiter.is_allowed(client_id):
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded. Please try again later."}
+        )
+    
+    response = await call_next(request)
+    return response
 
 @app.get("/")
 def read_root():
-    return {"message": "EHR System API is running"}
-
-@app.get("/search", response_model=List[Dict])
-def global_search(q: str, limit: int = 50) -> List[Dict]:
-    """
-    Simple global search across multiple resources. Uses case-insensitive LIKE
-    matching on commonly searched columns and returns a unified result shape.
-    """
-    if not q:
-        return []
-
-    search_term = f"%{q}%"
-    per_table_limit = max(5, limit // 7)
-
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    results: List[Dict] = []
-
-    # Patients
-    cursor.execute(
-        """
-        SELECT 'patient' as type, id, family_name as title,
-               (COALESCE(identifier,'') || ' • ' || COALESCE(gender,'') || ' • ' || COALESCE(birth_date,'')) as subtitle,
-               id as patient_id
-        FROM patient
-        WHERE family_name LIKE ? OR identifier LIKE ? OR id LIKE ?
-        LIMIT ?
-        """,
-        (search_term, search_term, search_term, per_table_limit),
-    )
-    results.extend([dict(row) for row in cursor.fetchall()])
-
-    # Conditions
-    cursor.execute(
-        """
-        SELECT 'condition' as type, id, code_display as title,
-               (COALESCE(code,'') || ' • ' || COALESCE(category,'')) as subtitle,
-               patient_id
-        FROM condition
-        WHERE code_display LIKE ? OR code LIKE ? OR category LIKE ?
-        LIMIT ?
-        """,
-        (search_term, search_term, search_term, per_table_limit),
-    )
-    results.extend([dict(row) for row in cursor.fetchall()])
-
-    # Medications (Dispense)
-    cursor.execute(
-        """
-        SELECT 'medication' as type, id, medication_display as title,
-               (COALESCE(medication_code,'') || ' • ' || COALESCE(status,'')) as subtitle,
-               patient_id
-        FROM medication
-        WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?
-        LIMIT ?
-        """,
-        (search_term, search_term, search_term, per_table_limit),
-    )
-    results.extend([dict(row) for row in cursor.fetchall()])
-
-    # Encounters
-    cursor.execute(
-        """
-        SELECT 'encounter' as type, id, class_display as title,
-               (COALESCE(encounter_type,'') || ' • ' || COALESCE(status,'')) as subtitle,
-               patient_id
-        FROM encounter
-        WHERE class_display LIKE ? OR encounter_type LIKE ? OR status LIKE ?
-        LIMIT ?
-        """,
-        (search_term, search_term, search_term, per_table_limit),
-    )
-    results.extend([dict(row) for row in cursor.fetchall()])
-
-    # Medication administrations
-    cursor.execute(
-        """
-        SELECT 'medication-administration' as type, id, medication_display as title,
-               (COALESCE(status,'') || ' • ' || COALESCE(route_code,'')) as subtitle,
-               patient_id
-        FROM medication_administration
-        WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?
-        LIMIT ?
-        """,
-        (search_term, search_term, search_term, per_table_limit),
-    )
-    results.extend([dict(row) for row in cursor.fetchall()])
-
-    # Medication requests
-    cursor.execute(
-        """
-        SELECT 'medication-request' as type, id, medication_display as title,
-               (COALESCE(status,'') || ' • ' || COALESCE(priority,'')) as subtitle,
-               patient_id
-        FROM medication_request
-        WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?
-        LIMIT ?
-        """,
-        (search_term, search_term, search_term, per_table_limit),
-    )
-    results.extend([dict(row) for row in cursor.fetchall()])
-
-    # Observations
-    cursor.execute(
-        """
-        SELECT 'observation' as type, id, code_display as title,
-               (COALESCE(observation_type,'') || ' • ' || COALESCE(status,'')) as subtitle,
-               patient_id
-        FROM observation
-        WHERE code_display LIKE ? OR code LIKE ? OR observation_type LIKE ?
-        LIMIT ?
-        """,
-        (search_term, search_term, search_term, per_table_limit),
-    )
-    results.extend([dict(row) for row in cursor.fetchall()])
-
-    # Procedures
-    cursor.execute(
-        """
-        SELECT 'procedure' as type, id, procedure_display as title,
-               (COALESCE(procedure_code,'') || ' • ' || COALESCE(status,'')) as subtitle,
-               patient_id
-        FROM procedure
-        WHERE procedure_display LIKE ? OR procedure_code LIKE ? OR status LIKE ?
-        LIMIT ?
-        """,
-        (search_term, search_term, search_term, per_table_limit),
-    )
-    results.extend([dict(row) for row in cursor.fetchall()])
-
-    # Specimens
-    cursor.execute(
-        """
-        SELECT 'specimen' as type, id, specimen_type_display as title,
-               (COALESCE(status,'') || ' • ' || COALESCE(body_site_display,'')) as subtitle,
-               patient_id
-        FROM specimen
-        WHERE specimen_type_display LIKE ? OR body_site_display LIKE ? OR status LIKE ?
-        LIMIT ?
-        """,
-        (search_term, search_term, search_term, per_table_limit),
-    )
-    results.extend([dict(row) for row in cursor.fetchall()])
-
-    conn.close()
-
-    # Trim to global limit
-    return results[:limit]
-
-
-@app.get("/search/patients", response_model=List[Dict])
-def search_patients(q: str, limit: int = 50) -> List[Dict]:
-    """Return distinct patients whose data matches the query anywhere.
-    Searches core patient attributes and commonly searched columns in related tables.
-    """
-    if not q:
-        return []
-
-    search_term = f"%{q}%"
-    conn = get_db_connection()
-    cursor = conn.cursor()
-
-    matched_patient_ids = set()
-
-    # Match by patient attributes
-    cursor.execute(
-        """
-        SELECT id as patient_id FROM patient
-        WHERE family_name LIKE ? OR identifier LIKE ? OR id LIKE ? OR gender LIKE ?
-        """,
-        (search_term, search_term, search_term, search_term),
-    )
-    matched_patient_ids.update([row[0] for row in cursor.fetchall()])
-
-    def add_matches(query: str, params: tuple):
-        cursor.execute(query, params)
-        matched_patient_ids.update([row[0] for row in cursor.fetchall()])
-
-    # Related tables
-    add_matches(
-        "SELECT DISTINCT patient_id FROM condition WHERE code_display LIKE ? OR code LIKE ? OR category LIKE ?",
-        (search_term, search_term, search_term),
-    )
-    add_matches(
-        "SELECT DISTINCT patient_id FROM medication WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?",
-        (search_term, search_term, search_term),
-    )
-    add_matches(
-        "SELECT DISTINCT patient_id FROM encounter WHERE class_display LIKE ? OR encounter_type LIKE ? OR status LIKE ?",
-        (search_term, search_term, search_term),
-    )
-    add_matches(
-        "SELECT DISTINCT patient_id FROM medication_administration WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?",
-        (search_term, search_term, search_term),
-    )
-    add_matches(
-        "SELECT DISTINCT patient_id FROM medication_request WHERE medication_display LIKE ? OR medication_code LIKE ? OR status LIKE ?",
-        (search_term, search_term, search_term),
-    )
-    add_matches(
-        "SELECT DISTINCT patient_id FROM observation WHERE code_display LIKE ? OR code LIKE ? OR observation_type LIKE ?",
-        (search_term, search_term, search_term),
-    )
-    add_matches(
-        "SELECT DISTINCT patient_id FROM procedure WHERE procedure_display LIKE ? OR procedure_code LIKE ? OR status LIKE ?",
-        (search_term, search_term, search_term),
-    )
-    add_matches(
-        "SELECT DISTINCT patient_id FROM specimen WHERE specimen_type_display LIKE ? OR body_site_display LIKE ? OR status LIKE ?",
-        (search_term, search_term, search_term),
-    )
-
-    if not matched_patient_ids:
-        conn.close()
-        return []
-
-    # Fetch patient rows for matched ids
-    placeholders = ",".join(["?"] * len(matched_patient_ids))
-    cursor.execute(
-        f"SELECT * FROM patient WHERE id IN ({placeholders}) LIMIT ?",
-        (*matched_patient_ids, limit),
-    )
-    patients = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return patients
-
-@app.get("/patients", response_model=List[Dict])
-def list_patients():
-    conn = get_db_connection()
-    patients = conn.execute("SELECT * FROM patient").fetchall()
-    conn.close()
-    return [dict(row) for row in patients]
-
-@app.get("/patients/{patient_id}", response_model=Dict)
-def get_patient(patient_id: str):
-    conn = get_db_connection()
-    patient = conn.execute("SELECT * FROM patient WHERE id = ?", (patient_id,)).fetchone()
-    conn.close()
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    return dict(patient)
-
-@app.get("/conditions", response_model=List[Dict])
-def list_conditions():
-    conn = get_db_connection()
-    conditions = conn.execute("SELECT * FROM condition").fetchall()
-    conn.close()
-    return [dict(row) for row in conditions]
-
-@app.get("/conditions/{condition_id}", response_model=Dict)
-def get_condition(condition_id: str):
-    conn = get_db_connection()
-    condition = conn.execute("SELECT * FROM condition WHERE id = ?", (condition_id,)).fetchone()
-    conn.close()
-    if not condition:
-        raise HTTPException(status_code=404, detail="Condition not found")
-    return dict(condition)
-
-@app.get("/patients/{patient_id}/conditions", response_model=List[Dict])
-def get_patient_conditions(patient_id: str):
-    conn = get_db_connection()
-    conditions = conn.execute("SELECT * FROM condition WHERE patient_id = ?", (patient_id,)).fetchall()
-    conn.close()
-    return [dict(row) for row in conditions]
-
-@app.get("/medications", response_model=List[Dict])
-def list_medications():
-    conn = get_db_connection()
-    medications = conn.execute("SELECT * FROM medication").fetchall()
-    conn.close()
-    return [dict(row) for row in medications]
-
-@app.get("/medications/{medication_id}", response_model=Dict)
-def get_medication(medication_id: str):
-    conn = get_db_connection()
-    medication = conn.execute("SELECT * FROM medication WHERE id = ?", (medication_id,)).fetchone()
-    conn.close()
-    if not medication:
-        raise HTTPException(status_code=404, detail="Medication not found")
-    return dict(medication)
-
-@app.get("/patients/{patient_id}/medications", response_model=List[Dict])
-def get_patient_medications(patient_id: str):
-    conn = get_db_connection()
-    medications = conn.execute("SELECT * FROM medication WHERE patient_id = ?", (patient_id,)).fetchall()
-    conn.close()
-    return [dict(row) for row in medications]
-
-# Encounter endpoints
-@app.get("/encounters", response_model=List[Dict])
-def list_encounters():
-    conn = get_db_connection()
-    encounters = conn.execute("SELECT * FROM encounter").fetchall()
-    conn.close()
-    return [dict(row) for row in encounters]
-
-@app.get("/encounters/{encounter_id}", response_model=Dict)
-def get_encounter(encounter_id: str):
-    conn = get_db_connection()
-    encounter = conn.execute("SELECT * FROM encounter WHERE id = ?", (encounter_id,)).fetchone()
-    conn.close()
-    if not encounter:
-        raise HTTPException(status_code=404, detail="Encounter not found")
-    return dict(encounter)
-
-@app.get("/patients/{patient_id}/encounters", response_model=List[Dict])
-def get_patient_encounters(patient_id: str):
-    conn = get_db_connection()
-    encounters = conn.execute("SELECT * FROM encounter WHERE patient_id = ?", (patient_id,)).fetchall()
-    conn.close()
-    return [dict(row) for row in encounters]
-
-# Medication Administration endpoints
-@app.get("/medication-administrations", response_model=List[Dict])
-def list_medication_administrations():
-    conn = get_db_connection()
-    administrations = conn.execute("SELECT * FROM medication_administration").fetchall()
-    conn.close()
-    return [dict(row) for row in administrations]
-
-@app.get("/medication-administrations/{admin_id}", response_model=Dict)
-def get_medication_administration(admin_id: str):
-    conn = get_db_connection()
-    administration = conn.execute("SELECT * FROM medication_administration WHERE id = ?", (admin_id,)).fetchone()
-    conn.close()
-    if not administration:
-        raise HTTPException(status_code=404, detail="Medication administration not found")
-    return dict(administration)
-
-@app.get("/patients/{patient_id}/medication-administrations", response_model=List[Dict])
-def get_patient_medication_administrations(patient_id: str):
-    conn = get_db_connection()
-    administrations = conn.execute("SELECT * FROM medication_administration WHERE patient_id = ?", (patient_id,)).fetchall()
-    conn.close()
-    return [dict(row) for row in administrations]
-
-# Medication Request endpoints
-@app.get("/medication-requests", response_model=List[Dict])
-def list_medication_requests():
-    conn = get_db_connection()
-    requests = conn.execute("SELECT * FROM medication_request").fetchall()
-    conn.close()
-    return [dict(row) for row in requests]
-
-@app.get("/medication-requests/{request_id}", response_model=Dict)
-def get_medication_request(request_id: str):
-    conn = get_db_connection()
-    request = conn.execute("SELECT * FROM medication_request WHERE id = ?", (request_id,)).fetchone()
-    conn.close()
-    if not request:
-        raise HTTPException(status_code=404, detail="Medication request not found")
-    return dict(request)
-
-@app.get("/patients/{patient_id}/medication-requests", response_model=List[Dict])
-def get_patient_medication_requests(patient_id: str):
-    conn = get_db_connection()
-    requests = conn.execute("SELECT * FROM medication_request WHERE patient_id = ?", (patient_id,)).fetchall()
-    conn.close()
-    return [dict(row) for row in requests]
-
-# Observation endpoints
-@app.get("/observations", response_model=List[Dict])
-def list_observations():
-    conn = get_db_connection()
-    observations = conn.execute("SELECT * FROM observation LIMIT 1000").fetchall()  # Limit for performance
-    conn.close()
-    return [dict(row) for row in observations]
-
-@app.get("/observations/{observation_id}", response_model=Dict)
-def get_observation(observation_id: str):
-    conn = get_db_connection()
-    observation = conn.execute("SELECT * FROM observation WHERE id = ?", (observation_id,)).fetchone()
-    conn.close()
-    if not observation:
-        raise HTTPException(status_code=404, detail="Observation not found")
-    return dict(observation)
-
-@app.get("/patients/{patient_id}/observations", response_model=List[Dict])
-def get_patient_observations(patient_id: str):
-    conn = get_db_connection()
-    observations = conn.execute("SELECT * FROM observation WHERE patient_id = ? LIMIT 500", (patient_id,)).fetchall()
-    conn.close()
-    return [dict(row) for row in observations]
-
-# Procedure endpoints
-@app.get("/procedures", response_model=List[Dict])
-def list_procedures():
-    conn = get_db_connection()
-    procedures = conn.execute("SELECT * FROM procedure").fetchall()
-    conn.close()
-    return [dict(row) for row in procedures]
-
-@app.get("/procedures/{procedure_id}", response_model=Dict)
-def get_procedure(procedure_id: str):
-    conn = get_db_connection()
-    procedure = conn.execute("SELECT * FROM procedure WHERE id = ?", (procedure_id,)).fetchone()
-    conn.close()
-    if not procedure:
-        raise HTTPException(status_code=404, detail="Procedure not found")
-    return dict(procedure)
-
-@app.get("/patients/{patient_id}/procedures", response_model=List[Dict])
-def get_patient_procedures(patient_id: str):
-    conn = get_db_connection()
-    procedures = conn.execute("SELECT * FROM procedure WHERE patient_id = ?", (patient_id,)).fetchall()
-    conn.close()
-    return [dict(row) for row in procedures]
-
-# Specimen endpoints
-@app.get("/specimens", response_model=List[Dict])
-def list_specimens():
-    conn = get_db_connection()
-    specimens = conn.execute("SELECT * FROM specimen").fetchall()
-    conn.close()
-    return [dict(row) for row in specimens]
-
-@app.get("/specimens/{specimen_id}", response_model=Dict)
-def get_specimen(specimen_id: str):
-    conn = get_db_connection()
-    specimen = conn.execute("SELECT * FROM specimen WHERE id = ?", (specimen_id,)).fetchone()
-    conn.close()
-    if not specimen:
-        raise HTTPException(status_code=404, detail="Specimen not found")
-    return dict(specimen)
-
-@app.get("/patients/{patient_id}/specimens", response_model=List[Dict])
-def get_patient_specimens(patient_id: str):
-    conn = get_db_connection()
-    specimens = conn.execute("SELECT * FROM specimen WHERE patient_id = ?", (patient_id,)).fetchall()
-    conn.close()
-    return [dict(row) for row in specimens]
-
-# Dashboard endpoint for patient summary
-@app.get("/patients/{patient_id}/summary", response_model=Dict)
-def get_patient_summary(patient_id: str):
-    conn = get_db_connection()
-    
-    # Get patient info
-    patient = conn.execute("SELECT * FROM patient WHERE id = ?", (patient_id,)).fetchone()
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    
-    # Get counts for each data type
-    condition_count = conn.execute("SELECT COUNT(*) FROM condition WHERE patient_id = ?", (patient_id,)).fetchone()[0]
-    medication_count = conn.execute("SELECT COUNT(*) FROM medication WHERE patient_id = ?", (patient_id,)).fetchone()[0]
-    encounter_count = conn.execute("SELECT COUNT(*) FROM encounter WHERE patient_id = ?", (patient_id,)).fetchone()[0]
-    medication_admin_count = conn.execute("SELECT COUNT(*) FROM medication_administration WHERE patient_id = ?", (patient_id,)).fetchone()[0]
-    medication_request_count = conn.execute("SELECT COUNT(*) FROM medication_request WHERE patient_id = ?", (patient_id,)).fetchone()[0]
-    observation_count = conn.execute("SELECT COUNT(*) FROM observation WHERE patient_id = ?", (patient_id,)).fetchone()[0]
-    procedure_count = conn.execute("SELECT COUNT(*) FROM procedure WHERE patient_id = ?", (patient_id,)).fetchone()[0]
-    specimen_count = conn.execute("SELECT COUNT(*) FROM specimen WHERE patient_id = ?", (patient_id,)).fetchone()[0]
-    
-    conn.close()
-    
     return {
-        "patient": dict(patient),
-        "summary": {
-            "conditions": condition_count,
-            "medications": medication_count,
-            "encounters": encounter_count,
-            "medication_administrations": medication_admin_count,
-            "medication_requests": medication_request_count,
-            "observations": observation_count,
-            "procedures": procedure_count,
-            "specimens": specimen_count
-        }
+        "message": "EHR FHIR Proxy is running",
+        "fhir_server": FHIR_BASE_URL,
+        "cache_ttl": CACHE_TTL,
+        "rate_limit": f"{RATE_LIMIT_REQUESTS} requests per {RATE_LIMIT_WINDOW} seconds"
     }
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+@app.get("/Patient")
+async def get_patients(
+    _count: Optional[int] = 50,
+    name: Optional[str] = None,
+    **kwargs
+):
+    """Get patients from FHIR server with caching"""
+    cache_key = get_cache_key("GET", "/Patient", f"count={_count}&name={name}")
+    
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
+    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if name:
+        params["name"] = name
+    params.update(kwargs)
+    
+    data = await fetch_from_fhir("/Patient", params)
+    
+    # Cache the result
+    cache[cache_key] = {
+        "data": data,
+        "timestamp": time.time()
+    }
+    
+    return data
+
+@app.get("/Condition")
+async def get_conditions(
+    patient: Optional[str] = None,
+    _count: Optional[int] = 100,
+    **kwargs
+):
+    """Get conditions from FHIR server with caching"""
+    cache_key = get_cache_key("GET", "/Condition", f"patient={patient}&count={_count}")
+    
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
+    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    params.update(kwargs)
+    
+    data = await fetch_from_fhir("/Condition", params)
+    
+    # Cache the result
+    cache[cache_key] = {
+        "data": data,
+        "timestamp": time.time()
+    }
+    
+    return data
+
+@app.get("/MedicationRequest")
+async def get_medication_requests(
+    patient: Optional[str] = None,
+    medication: Optional[str] = None,
+    _count: Optional[int] = 100,
+    **kwargs
+):
+    """Get medication requests from FHIR server with caching"""
+    cache_key = get_cache_key("GET", "/MedicationRequest", f"patient={patient}&medication={medication}&count={_count}")
+    
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
+    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    if medication:
+        params["medication"] = medication
+    params.update(kwargs)
+    
+    data = await fetch_from_fhir("/MedicationRequest", params)
+    
+    # Cache the result
+    cache[cache_key] = {
+        "data": data,
+        "timestamp": time.time()
+    }
+    
+    return data
+
+@app.get("/MedicationAdministration")
+async def get_medication_administrations(
+    patient: Optional[str] = None,
+    _count: Optional[int] = 100,
+    **kwargs
+):
+    """Get medication administrations from FHIR server with caching"""
+    cache_key = get_cache_key("GET", "/MedicationAdministration", f"patient={patient}&count={_count}")
+    
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
+    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    params.update(kwargs)
+    
+    data = await fetch_from_fhir("/MedicationAdministration", params)
+    
+    # Cache the result
+    cache[cache_key] = {
+        "data": data,
+        "timestamp": time.time()
+    }
+    
+    return data
+
+@app.get("/Encounter")
+async def get_encounters(
+    patient: Optional[str] = None,
+    _count: Optional[int] = 100,
+    **kwargs
+):
+    """Get encounters from FHIR server with caching"""
+    cache_key = get_cache_key("GET", "/Encounter", f"patient={patient}&count={_count}")
+    
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
+    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    params.update(kwargs)
+    
+    data = await fetch_from_fhir("/Encounter", params)
+    
+    # Cache the result
+    cache[cache_key] = {
+        "data": data,
+        "timestamp": time.time()
+    }
+    
+    return data
+
+@app.get("/Observation")
+async def get_observations(
+    patient: Optional[str] = None,
+    code: Optional[str] = None,
+    _count: Optional[int] = 100,
+    **kwargs
+):
+    """Get observations from FHIR server with caching"""
+    cache_key = get_cache_key("GET", "/Observation", f"patient={patient}&code={code}&count={_count}")
+    
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
+    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    if code:
+        params["code"] = code
+    params.update(kwargs)
+    
+    data = await fetch_from_fhir("/Observation", params)
+    
+    # Cache the result
+    cache[cache_key] = {
+        "data": data,
+        "timestamp": time.time()
+    }
+    
+    return data
+
+@app.get("/Procedure")
+async def get_procedures(
+    patient: Optional[str] = None,
+    _count: Optional[int] = 100,
+    **kwargs
+):
+    """Get procedures from FHIR server with caching"""
+    cache_key = get_cache_key("GET", "/Procedure", f"patient={patient}&count={_count}")
+    
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
+    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    params.update(kwargs)
+    
+    data = await fetch_from_fhir("/Procedure", params)
+    
+    # Cache the result
+    cache[cache_key] = {
+        "data": data,
+        "timestamp": time.time()
+    }
+    
+    return data
+
+@app.get("/Specimen")
+async def get_specimens(
+    patient: Optional[str] = None,
+    _count: Optional[int] = 100,
+    **kwargs
+):
+    """Get specimens from FHIR server with caching"""
+    cache_key = get_cache_key("GET", "/Specimen", f"patient={patient}&count={_count}")
+    
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
+    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    params.update(kwargs)
+    
+    data = await fetch_from_fhir("/Specimen", params)
+    
+    # Cache the result
+    cache[cache_key] = {
+        "data": data,
+        "timestamp": time.time()
+    }
+    
+    return data
+
+@app.get("/cache/status")
+def get_cache_status():
+    """Get cache status and statistics"""
+    now = time.time()
+    active_cache_entries = 0
+    expired_cache_entries = 0
+    
+    for key, value in cache.items():
+        if now - value["timestamp"] < CACHE_TTL:
+            active_cache_entries += 1
+        else:
+            expired_cache_entries += 1
+    
+    return {
+        "total_cache_entries": len(cache),
+        "active_cache_entries": active_cache_entries,
+        "expired_cache_entries": expired_cache_entries,
+        "cache_ttl_seconds": CACHE_TTL,
+        "rate_limit_requests": RATE_LIMIT_REQUESTS,
+        "rate_limit_window_seconds": RATE_LIMIT_WINDOW
+    }
+
+@app.post("/cache/clear")
+def clear_cache():
+    """Clear all cached data"""
+    global cache
+    cache.clear()
+    return {"message": "Cache cleared successfully"}
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal server error: {str(exc)}"}
+    )

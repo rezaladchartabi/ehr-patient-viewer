@@ -192,7 +192,7 @@ interface PatientSummary {
   };
 }
 
-const API_BASE = process.env.REACT_APP_API_URL || 'https://gel-landscapes-impaired-vitamin.trycloudflare.com/fhir';
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 function App() {
   const { theme, setTheme } = useTheme();
@@ -249,7 +249,7 @@ function App() {
 
   useEffect(() => {
     setLoading(true);
-    fetch(`${API_BASE}/Patient?_count=50`)
+    fetch(`${API_BASE}/Patient?_count=200`)
       .then(res => res.json())
       .then(data => {
         // Extract patients from FHIR Bundle
@@ -270,9 +270,7 @@ function App() {
         setPatients(patients);
         setLoading(false);
         if (patients.length > 0) {
-          // Try to find a patient with medication data, otherwise use the first one
-          const patientWithData = patients.find((p: Patient) => p.id === '03632093-8e46-5c64-8d8b-76ce07fa7b35') || patients[0];
-          selectPatient(patientWithData);
+          selectPatient(patients[0]);
         }
       })
       .catch(err => {
