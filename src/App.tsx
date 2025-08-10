@@ -502,19 +502,21 @@ function App() {
                       </div>
                       {selectedEncounterId === enc.id && (
                         <div className="mt-3 border-t border-gray-200 dark:border-neutral-800 pt-3">
-                          <PatientTabs
-                            tabs={[
-                              { id: 'conditions', label: 'Conditions' },
-                              { id: 'medications', label: 'Medications' },
-                              { id: 'medication-administrations', label: 'Med Admin' },
-                              { id: 'medication-requests', label: 'Med Requests' },
-                              { id: 'observations', label: 'Observations' },
-                              { id: 'procedures', label: 'Procedures' },
-                              { id: 'specimens', label: 'Specimens' },
-                            ]}
-                            active={activeTab}
-                            onChange={setActiveTab}
-                          />
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <PatientTabs
+                              tabs={[
+                                { id: 'conditions', label: 'Conditions' },
+                                { id: 'medications', label: 'Medications' },
+                                { id: 'medication-administrations', label: 'Med Admin' },
+                                { id: 'medication-requests', label: 'Med Requests' },
+                                { id: 'observations', label: 'Observations' },
+                                { id: 'procedures', label: 'Procedures' },
+                                { id: 'specimens', label: 'Specimens' },
+                              ]}
+                              active={activeTab}
+                              onChange={setActiveTab}
+                            />
+                          </div>
 
                           <div className="mt-3">
                             {activeTab === 'conditions' && (
