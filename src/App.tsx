@@ -250,7 +250,7 @@ function App() {
   useEffect(() => {
     setLoading(true);
     console.log('Fetching patients from:', API_BASE);
-    fetch(`${API_BASE}/Patient?_count=200`)
+    fetch(`${API_BASE}/Patient?_count=50`)
       .then(res => res.json())
       .then(data => {
         // Extract patients from FHIR Bundle
