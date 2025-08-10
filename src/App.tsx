@@ -209,6 +209,7 @@ function App() {
   const [observations, setObservations] = useState<Observation[]>([]);
   const [procedures, setProcedures] = useState<Procedure[]>([]);
   const [specimens, setSpecimens] = useState<Specimen[]>([]);
+  const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>('conditions');
@@ -219,7 +220,6 @@ function App() {
   const [showSearchOverlay, setShowSearchOverlay] = useState<boolean>(false);
 
   type ServiceLine = 'ICU' | 'ED' | 'Default';
-  const [activeServiceLine, setActiveServiceLine] = useState<ServiceLine>('Default');
 
   const getServiceLineFromEncounter = (enc: Encounter): ServiceLine => {
     if (!enc) return 'Default';
@@ -229,38 +229,23 @@ function App() {
     return 'Default';
   };
 
-  const encounterIdToServiceLine: Record<string, ServiceLine> = useMemo(() => {
-    const map: Record<string, ServiceLine> = {};
-    for (const enc of encounters) {
-      map[enc.id] = getServiceLineFromEncounter(enc);
-    }
-    return map;
+  const sortedEncounters = useMemo(() => {
+    const toMs = (e: Encounter) => {
+      const d = e.start_date || e.end_date || '';
+      const ms = Date.parse(d);
+      return Number.isNaN(ms) ? 0 : ms;
+    };
+    return [...encounters].sort((a, b) => toMs(b) - toMs(a));
   }, [encounters]);
 
-  const groupItemsByServiceLine = <T extends { encounter_id?: string }>(items: T[]): Record<ServiceLine, T[]> => {
-    const groups: Record<ServiceLine, T[]> = { ICU: [], ED: [], Default: [] };
-    for (const item of items) {
-      const line = item.encounter_id ? (encounterIdToServiceLine[item.encounter_id] || 'Default') : 'Default';
-      groups[line].push(item);
+  useEffect(() => {
+    if (encounters.length === 0) {
+      setSelectedEncounterId(null);
+      return;
     }
-    return groups;
-  };
-
-  const groupedEncounters = useMemo(() => {
-    const groups: Record<ServiceLine, Encounter[]> = { ICU: [], ED: [], Default: [] };
-    for (const enc of encounters) {
-      groups[getServiceLineFromEncounter(enc)].push(enc);
-    }
-    return groups;
-  }, [encounters]);
-
-  const groupedConditions = useMemo(() => groupItemsByServiceLine(conditions), [conditions, encounterIdToServiceLine]);
-  const groupedMedications = useMemo(() => groupItemsByServiceLine(medications), [medications, encounterIdToServiceLine]);
-  const groupedMedicationAdministrations = useMemo(() => groupItemsByServiceLine(medicationAdministrations), [medicationAdministrations, encounterIdToServiceLine]);
-  const groupedMedicationRequests = useMemo(() => groupItemsByServiceLine(medicationRequests), [medicationRequests, encounterIdToServiceLine]);
-  const groupedObservations = useMemo(() => groupItemsByServiceLine(observations), [observations, encounterIdToServiceLine]);
-  const groupedProcedures = useMemo(() => groupItemsByServiceLine(procedures), [procedures, encounterIdToServiceLine]);
-  const groupedSpecimens = useMemo(() => groupItemsByServiceLine(specimens), [specimens, encounterIdToServiceLine]);
+    const first = sortedEncounters[0];
+    setSelectedEncounterId(first ? first.id : null);
+  }, [encounters, sortedEncounters]);
 
   useEffect(() => {
     setLoading(true);
@@ -299,7 +284,15 @@ function App() {
     const fetchPromises = [
       fetch(`${API_BASE}/patients/${patient.id}/conditions`).then(res => res.json()).then(setConditions).catch(() => setConditions([])),
       fetch(`${API_BASE}/patients/${patient.id}/medications`).then(res => res.json()).then(setMedications).catch(() => setMedications([])),
-      fetch(`${API_BASE}/patients/${patient.id}/encounters`).then(res => res.json()).then(setEncounters).catch(() => setEncounters([])),
+      fetch(`${API_BASE}/patients/${patient.id}/encounters`).then(res => res.json()).then((encs) => {
+        setEncounters(encs);
+        if (Array.isArray(encs) && encs.length > 0) {
+          const sorted = [...encs].sort((a, b) => Date.parse(b.start_date || b.end_date || '') - Date.parse(a.start_date || a.end_date || ''));
+          setSelectedEncounterId(sorted[0]?.id || null);
+        } else {
+          setSelectedEncounterId(null);
+        }
+      }).catch(() => setEncounters([])),
       fetch(`${API_BASE}/patients/${patient.id}/medication-administrations`).then(res => res.json()).then(setMedicationAdministrations).catch(() => setMedicationAdministrations([])),
       fetch(`${API_BASE}/patients/${patient.id}/medication-requests`).then(res => res.json()).then(setMedicationRequests).catch(() => setMedicationRequests([])),
       fetch(`${API_BASE}/patients/${patient.id}/observations`).then(res => res.json()).then(setObservations).catch(() => setObservations([])),
@@ -485,181 +478,126 @@ function App() {
                 </tbody>
               </table>
 
-              
+              {/* Encounters list sorted by most recent */}
+              <div className="mb-4">
+                <h2 className="text-lg font-semibold mb-2">Encounters</h2>
+                <ul className="divide-y divide-gray-200 dark:divide-neutral-800 rounded-lg border border-gray-200 dark:border-neutral-800 overflow-hidden">
+                  {sortedEncounters.map((enc) => (
+                    <li
+                      key={enc.id}
+                      className={"p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800 " + (selectedEncounterId === enc.id ? 'bg-blue-50 dark:bg-neutral-800/50' : '')}
+                      onClick={() => setSelectedEncounterId(enc.id)}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{enc.class_display || enc.encounter_type || 'Encounter'}</div>
+                          <div className="text-xs text-gray-500">{enc.start_date} {enc.end_date ? `- ${enc.end_date}` : ''} • {enc.status} • {enc.service_type || getServiceLineFromEncounter(enc)}</div>
+                        </div>
+                        <div className="text-xs text-gray-500">{enc.priority_display}</div>
+                      </div>
+                    </li>
+                  ))}
+                  {sortedEncounters.length === 0 && <li className="p-3 text-sm text-gray-500">No encounters</li>}
+                </ul>
+              </div>
 
-              {/* Tabs */}
-              <div style={{ marginBottom: '20px' }}>
-                {/* Top-level: Data Type */}
-                <PatientTabs
-                  tabs={[
-                    { id: 'conditions', label: 'Conditions' },
-                    { id: 'medications', label: 'Medications' },
-                    { id: 'encounters', label: 'Encounters' },
-                    { id: 'medication-administrations', label: 'Med Admin' },
-                    { id: 'medication-requests', label: 'Med Requests' },
-                    { id: 'observations', label: 'Observations' },
-                    { id: 'procedures', label: 'Procedures' },
-                    { id: 'specimens', label: 'Specimens' },
-                  ]}
-                  active={activeTab}
-                  onChange={setActiveTab}
-                />
-                {/* Sub-level: Service Line */}
-                <div style={{ marginTop: '10px' }}>
+              {/* Encounter details tabs */}
+              {selectedEncounterId && (
+                <div>
                   <PatientTabs
                     tabs={[
-                      { id: 'Default', label: 'Default' },
-                      { id: 'ED', label: 'ED' },
-                      { id: 'ICU', label: 'ICU' },
+                      { id: 'conditions', label: 'Conditions' },
+                      { id: 'medications', label: 'Medications' },
+                      { id: 'medication-administrations', label: 'Med Admin' },
+                      { id: 'medication-requests', label: 'Med Requests' },
+                      { id: 'observations', label: 'Observations' },
+                      { id: 'procedures', label: 'Procedures' },
+                      { id: 'specimens', label: 'Specimens' },
                     ]}
-                    active={activeServiceLine}
-                    onChange={(id) => setActiveServiceLine(id as ServiceLine)}
+                    active={activeTab}
+                    onChange={setActiveTab}
                   />
-                </div>
 
-                {/* Tab Content */}
-                {loading ? (
-                  <div>Loading...</div>
-                ) : (
-                  <div>
+                  <div className="mt-4">
                     {activeTab === 'conditions' && (
-                      <div>
-                        <h3>Conditions ({groupedConditions[activeServiceLine].length})</h3>
-                        <ul style={{ listStyle: 'none', padding: 0 }}>
-                          {groupedConditions[activeServiceLine].map(cond => (
-                            <li key={cond.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                              <b>{cond.code_display}</b> (ICD: {cond.code})<br />
-                              Category: {cond.category} | Status: {cond.status}
-                            </li>
-                          ))}
-                          {groupedConditions[activeServiceLine].length === 0 && <li>None</li>}
-                        </ul>
-                      </div>
+                      <ul style={{ listStyle: 'none', padding: 0 }}>
+                        {conditions.filter(c => c.encounter_id === selectedEncounterId).map(cond => (
+                          <li key={cond.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                            <b>{cond.code_display}</b> (ICD: {cond.code}) • Category: {cond.category} • Status: {cond.status}
+                          </li>
+                        ))}
+                        {conditions.filter(c => c.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                      </ul>
                     )}
 
                     {activeTab === 'medications' && (
-                      <div>
-                        <h3>Medications ({groupedMedications[activeServiceLine].length})</h3>
-                        <ul style={{ listStyle: 'none', padding: 0 }}>
-                          {groupedMedications[activeServiceLine].map(med => (
-                            <li key={med.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                              <b>{med.medication_display}</b> (Code: {med.medication_code})<br />
-                              Status: {med.status} | Quantity: {med.quantity} {med.quantity_unit}<br />
-                              Days Supply: {med.days_supply} | Dispense Date: {med.dispense_date}
-                            </li>
-                          ))}
-                          {groupedMedications[activeServiceLine].length === 0 && <li>None</li>}
-                        </ul>
-                      </div>
-                    )}
-
-                    {activeTab === 'encounters' && (
-                      <div>
-                        <h3>Encounters ({groupedEncounters[activeServiceLine].length})</h3>
-                        <ul style={{ listStyle: 'none', padding: 0 }}>
-                          {groupedEncounters[activeServiceLine].map(enc => (
-                            <li key={enc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                              <b>{enc.class_display}</b> ({enc.encounter_type})<br />
-                              Status: {enc.status} | Start: {enc.start_date} | End: {enc.end_date}<br />
-                              Priority: {enc.priority_display} | Service: {enc.service_type}
-                            </li>
-                          ))}
-                          {groupedEncounters[activeServiceLine].length === 0 && <li>None</li>}
-                        </ul>
-                      </div>
+                      <ul style={{ listStyle: 'none', padding: 0 }}>
+                        {medications.filter(m => m.encounter_id === selectedEncounterId).map(med => (
+                          <li key={med.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                            <b>{med.medication_display}</b> (Code: {med.medication_code}) • Status: {med.status} • Qty: {med.quantity} {med.quantity_unit}
+                          </li>
+                        ))}
+                        {medications.filter(m => m.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                      </ul>
                     )}
 
                     {activeTab === 'medication-administrations' && (
-                      <div>
-                        <h3>Medication Administrations ({groupedMedicationAdministrations[activeServiceLine].length})</h3>
-                        <ul style={{ listStyle: 'none', padding: 0 }}>
-                          {groupedMedicationAdministrations[activeServiceLine].slice(0, 50).map(admin => (
-                            <li key={admin.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                              <b>{admin.medication_display}</b> (Code: {admin.medication_code})<br />
-                              Status: {admin.status} | Dosage: {admin.dosage_quantity} {admin.dosage_unit}<br />
-                              Route: {admin.route_code} | Effective: {admin.effective_start}
-                            </li>
-                          ))}
-                          {groupedMedicationAdministrations[activeServiceLine].length === 0 && <li>None</li>}
-                          {groupedMedicationAdministrations[activeServiceLine].length > 50 && (
-                            <li>... and {groupedMedicationAdministrations[activeServiceLine].length - 50} more</li>
-                          )}
-                        </ul>
-                      </div>
+                      <ul style={{ listStyle: 'none', padding: 0 }}>
+                        {medicationAdministrations.filter(a => a.encounter_id === selectedEncounterId).slice(0, 50).map(admin => (
+                          <li key={admin.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                            <b>{admin.medication_display}</b> • Status: {admin.status} • Dosage: {admin.dosage_quantity} {admin.dosage_unit}
+                          </li>
+                        ))}
+                        {medicationAdministrations.filter(a => a.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                      </ul>
                     )}
 
                     {activeTab === 'medication-requests' && (
-                      <div>
-                        <h3>Medication Requests ({groupedMedicationRequests[activeServiceLine].length})</h3>
-                        <ul style={{ listStyle: 'none', padding: 0 }}>
-                          {groupedMedicationRequests[activeServiceLine].map(req => (
-                            <li key={req.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                              <b>{req.medication_display}</b> (Code: {req.medication_code})<br />
-                              Status: {req.status} | Intent: {req.intent} | Priority: {req.priority}<br />
-                              Dosage: {req.dosage_quantity} {req.dosage_unit} | Frequency: {req.frequency_display}<br />
-                              Authored: {req.authored_on}
-                            </li>
-                          ))}
-                          {groupedMedicationRequests[activeServiceLine].length === 0 && <li>None</li>}
-                        </ul>
-                      </div>
+                      <ul style={{ listStyle: 'none', padding: 0 }}>
+                        {medicationRequests.filter(r => r.encounter_id === selectedEncounterId).map(req => (
+                          <li key={req.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                            <b>{req.medication_display}</b> • Status: {req.status} • Priority: {req.priority}
+                          </li>
+                        ))}
+                        {medicationRequests.filter(r => r.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                      </ul>
                     )}
 
                     {activeTab === 'observations' && (
-                      <div>
-                        <h3>Observations ({groupedObservations[activeServiceLine].length})</h3>
-                        <ul style={{ listStyle: 'none', padding: 0 }}>
-                          {groupedObservations[activeServiceLine].slice(0, 50).map(obs => (
-                            <li key={obs.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                              <b>{obs.code_display}</b> (Type: {obs.observation_type})<br />
-                              Value: {obs.value_quantity || obs.value_string || obs.value_display || obs.value_code || 'N/A'} {obs.value_unit}<br />
-                              Category: {obs.category_display} | Effective: {obs.effective_datetime}
-                            </li>
-                          ))}
-                          {groupedObservations[activeServiceLine].length === 0 && <li>None</li>}
-                          {groupedObservations[activeServiceLine].length > 50 && (
-                            <li>... and {groupedObservations[activeServiceLine].length - 50} more</li>
-                          )}
-                        </ul>
-                      </div>
+                      <ul style={{ listStyle: 'none', padding: 0 }}>
+                        {observations.filter(o => o.encounter_id === selectedEncounterId).slice(0, 50).map(obs => (
+                          <li key={obs.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                            <b>{obs.code_display}</b> • Value: {obs.value_quantity || obs.value_string || obs.value_display || obs.value_code || 'N/A'} {obs.value_unit}
+                          </li>
+                        ))}
+                        {observations.filter(o => o.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                      </ul>
                     )}
 
                     {activeTab === 'procedures' && (
-                      <div>
-                        <h3>Procedures ({groupedProcedures[activeServiceLine].length})</h3>
-                        <ul style={{ listStyle: 'none', padding: 0 }}>
-                          {groupedProcedures[activeServiceLine].map(proc => (
-                            <li key={proc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                              <b>{proc.procedure_display}</b> (Code: {proc.procedure_code})<br />
-                              Status: {proc.status} | Category: {proc.category_display}<br />
-                              Performed: {proc.performed_datetime || proc.performed_period_start}<br />
-                              Outcome: {proc.outcome_display} | Follow-up: {proc.follow_up_display}
-                            </li>
-                          ))}
-                          {groupedProcedures[activeServiceLine].length === 0 && <li>None</li>}
-                        </ul>
-                      </div>
+                      <ul style={{ listStyle: 'none', padding: 0 }}>
+                        {procedures.filter(p => p.encounter_id === selectedEncounterId).map(proc => (
+                          <li key={proc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                            <b>{proc.procedure_display}</b> • Status: {proc.status}
+                          </li>
+                        ))}
+                        {procedures.filter(p => p.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                      </ul>
                     )}
 
                     {activeTab === 'specimens' && (
-                      <div>
-                        <h3>Specimens ({groupedSpecimens[activeServiceLine].length})</h3>
-                        <ul style={{ listStyle: 'none', padding: 0 }}>
-                          {groupedSpecimens[activeServiceLine].map(spec => (
-                            <li key={spec.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                              <b>{spec.specimen_type_display}</b> (Code: {spec.specimen_type_code})<br />
-                              Status: {spec.status} | Collection Method: {spec.collection_method_display}<br />
-                              Body Site: {spec.body_site_display} | Collected: {spec.collected_datetime}<br />
-                              Container: {spec.container_display} | Note: {spec.note || 'N/A'}
-                            </li>
-                          ))}
-                          {groupedSpecimens[activeServiceLine].length === 0 && <li>None</li>}
-                        </ul>
-                      </div>
+                      <ul style={{ listStyle: 'none', padding: 0 }}>
+                        {specimens.filter(s => s.encounter_id === selectedEncounterId).map(spec => (
+                          <li key={spec.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                            <b>{spec.specimen_type_display}</b> • Status: {spec.status}
+                          </li>
+                        ))}
+                        {specimens.filter(s => s.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                      </ul>
                     )}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           )}
         </div>
