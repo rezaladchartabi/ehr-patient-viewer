@@ -110,8 +110,7 @@ def read_root():
 @app.get("/Patient")
 async def get_patients(
     _count: Optional[int] = 50,
-    name: Optional[str] = None,
-    **kwargs
+    name: Optional[str] = None
 ):
     """Get patients from FHIR server with caching"""
     cache_key = get_cache_key("GET", "/Patient", f"count={_count}&name={name}")
@@ -126,7 +125,6 @@ async def get_patients(
     params = {"_count": _count}
     if name:
         params["name"] = name
-    params.update(kwargs)
     
     data = await fetch_from_fhir("/Patient", params)
     
@@ -141,8 +139,7 @@ async def get_patients(
 @app.get("/Condition")
 async def get_conditions(
     patient: Optional[str] = None,
-    _count: Optional[int] = 100,
-    **kwargs
+    _count: Optional[int] = 100
 ):
     """Get conditions from FHIR server with caching"""
     cache_key = get_cache_key("GET", "/Condition", f"patient={patient}&count={_count}")
@@ -157,7 +154,6 @@ async def get_conditions(
     params = {"_count": _count}
     if patient:
         params["patient"] = patient
-    params.update(kwargs)
     
     data = await fetch_from_fhir("/Condition", params)
     
@@ -173,8 +169,7 @@ async def get_conditions(
 async def get_medication_requests(
     patient: Optional[str] = None,
     medication: Optional[str] = None,
-    _count: Optional[int] = 100,
-    **kwargs
+    _count: Optional[int] = 100
 ):
     """Get medication requests from FHIR server with caching"""
     cache_key = get_cache_key("GET", "/MedicationRequest", f"patient={patient}&medication={medication}&count={_count}")
@@ -191,7 +186,6 @@ async def get_medication_requests(
         params["patient"] = patient
     if medication:
         params["medication"] = medication
-    params.update(kwargs)
     
     data = await fetch_from_fhir("/MedicationRequest", params)
     
@@ -206,8 +200,7 @@ async def get_medication_requests(
 @app.get("/MedicationAdministration")
 async def get_medication_administrations(
     patient: Optional[str] = None,
-    _count: Optional[int] = 100,
-    **kwargs
+    _count: Optional[int] = 100
 ):
     """Get medication administrations from FHIR server with caching"""
     cache_key = get_cache_key("GET", "/MedicationAdministration", f"patient={patient}&count={_count}")
@@ -222,7 +215,6 @@ async def get_medication_administrations(
     params = {"_count": _count}
     if patient:
         params["patient"] = patient
-    params.update(kwargs)
     
     data = await fetch_from_fhir("/MedicationAdministration", params)
     
@@ -237,8 +229,7 @@ async def get_medication_administrations(
 @app.get("/Encounter")
 async def get_encounters(
     patient: Optional[str] = None,
-    _count: Optional[int] = 100,
-    **kwargs
+    _count: Optional[int] = 100
 ):
     """Get encounters from FHIR server with caching"""
     cache_key = get_cache_key("GET", "/Encounter", f"patient={patient}&count={_count}")
@@ -253,7 +244,6 @@ async def get_encounters(
     params = {"_count": _count}
     if patient:
         params["patient"] = patient
-    params.update(kwargs)
     
     data = await fetch_from_fhir("/Encounter", params)
     
@@ -269,8 +259,7 @@ async def get_encounters(
 async def get_observations(
     patient: Optional[str] = None,
     code: Optional[str] = None,
-    _count: Optional[int] = 100,
-    **kwargs
+    _count: Optional[int] = 100
 ):
     """Get observations from FHIR server with caching"""
     cache_key = get_cache_key("GET", "/Observation", f"patient={patient}&code={code}&count={_count}")
@@ -287,7 +276,6 @@ async def get_observations(
         params["patient"] = patient
     if code:
         params["code"] = code
-    params.update(kwargs)
     
     data = await fetch_from_fhir("/Observation", params)
     
@@ -302,8 +290,7 @@ async def get_observations(
 @app.get("/Procedure")
 async def get_procedures(
     patient: Optional[str] = None,
-    _count: Optional[int] = 100,
-    **kwargs
+    _count: Optional[int] = 100
 ):
     """Get procedures from FHIR server with caching"""
     cache_key = get_cache_key("GET", "/Procedure", f"patient={patient}&count={_count}")
@@ -318,7 +305,6 @@ async def get_procedures(
     params = {"_count": _count}
     if patient:
         params["patient"] = patient
-    params.update(kwargs)
     
     data = await fetch_from_fhir("/Procedure", params)
     
@@ -333,8 +319,7 @@ async def get_procedures(
 @app.get("/Specimen")
 async def get_specimens(
     patient: Optional[str] = None,
-    _count: Optional[int] = 100,
-    **kwargs
+    _count: Optional[int] = 100
 ):
     """Get specimens from FHIR server with caching"""
     cache_key = get_cache_key("GET", "/Specimen", f"patient={patient}&count={_count}")
@@ -349,7 +334,6 @@ async def get_specimens(
     params = {"_count": _count}
     if patient:
         params["patient"] = patient
-    params.update(kwargs)
     
     data = await fetch_from_fhir("/Specimen", params)
     
