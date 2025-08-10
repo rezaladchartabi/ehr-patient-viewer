@@ -532,12 +532,24 @@ function App() {
 
                             {activeTab === 'medications' && (
                               <ul style={{ listStyle: 'none', padding: 0 }}>
-                                {medications.filter(m => m.encounter_id === selectedEncounterId).map(med => (
-                                  <li key={med.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                                    <b>{med.medication_display}</b> (Code: {med.medication_code}) • Status: {med.status} • Qty: {med.quantity} {med.quantity_unit}
+                                {medicationRequests.filter(m => m.encounter_id === selectedEncounterId).map(med => (
+                                  <li key={med.id} style={{ padding: '15px', border: '1px solid #ddd', marginBottom: '8px', borderRadius: '6px' }}>
+                                    <div style={{ marginBottom: '8px' }}>
+                                      <b style={{ fontSize: '16px', color: '#2563eb' }}>{med.medication_display}</b>
+                                      <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>({med.medication_code})</span>
+                                    </div>
+                                    <div style={{ fontSize: '14px', lineHeight: '1.5' }}>
+                                      <div><strong>Status:</strong> {med.status}</div>
+                                      <div><strong>Intent:</strong> {med.intent}</div>
+                                      <div><strong>Priority:</strong> {med.priority}</div>
+                                      <div><strong>Dosage:</strong> {med.dosage_quantity} {med.dosage_unit}</div>
+                                      <div><strong>Route:</strong> {med.route_display || med.route_code}</div>
+                                      <div><strong>Frequency:</strong> {med.frequency_display || med.frequency_code}</div>
+                                      <div><strong>Authored:</strong> {med.authored_on}</div>
+                                    </div>
                                   </li>
                                 ))}
-                                {medications.filter(m => m.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                                {medicationRequests.filter(m => m.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
                               </ul>
                             )}
 
