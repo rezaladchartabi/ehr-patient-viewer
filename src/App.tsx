@@ -332,22 +332,22 @@ function App() {
         setConditions(conditions);
       }).catch(() => setConditions([])),
       
-      fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
-        const medications = data.entry ? data.entry.map((entry: any) => ({
-          id: entry.resource.id,
-          patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
-          medication_code: entry.resource.medicationCodeableConcept?.coding?.[0]?.code || '',
-          medication_display: entry.resource.medicationCodeableConcept?.text || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || '',
-          medication_system: entry.resource.medicationCodeableConcept?.coding?.[0]?.system || '',
-          status: entry.resource.status || '',
-          quantity: entry.resource.dispenseRequest?.quantity?.value || 0,
-          quantity_unit: entry.resource.dispenseRequest?.quantity?.unit || '',
-          days_supply: entry.resource.dispenseRequest?.expectedSupplyDuration?.value || 0,
-          dispense_date: entry.resource.authoredOn || '',
-          encounter_id: entry.resource.encounter?.reference?.split('/')[1] || ''
-        })) : [];
-        setMedications(medications);
-      }).catch(() => setMedications([])),
+             fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+         const medications = data.entry ? data.entry.map((entry: any) => ({
+           id: entry.resource.id,
+           patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+           medication_code: entry.resource.medicationCodeableConcept?.coding?.[0]?.code || '',
+           medication_display: entry.resource.medicationCodeableConcept?.coding?.[0]?.code || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || 'Unknown Medication',
+           medication_system: entry.resource.medicationCodeableConcept?.coding?.[0]?.system || '',
+           status: entry.resource.status || '',
+           quantity: entry.resource.dispenseRequest?.quantity?.value || 0,
+           quantity_unit: entry.resource.dispenseRequest?.quantity?.unit || '',
+           days_supply: entry.resource.dispenseRequest?.expectedSupplyDuration?.value || 0,
+           dispense_date: entry.resource.authoredOn || '',
+           encounter_id: entry.resource.encounter?.reference?.split('/')[1] || ''
+         })) : [];
+         setMedications(medications);
+       }).catch(() => setMedications([])),
       
       fetch(`${API_BASE}/Encounter?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
         const encounters = data.entry ? data.entry.map((entry: any) => ({
@@ -379,54 +379,54 @@ function App() {
         }
       }).catch(() => setEncounters([])),
       
-      fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
-        const administrations = data.entry ? data.entry.map((entry: any) => ({
-          id: entry.resource.id,
-          patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
-          encounter_id: entry.resource.context?.reference?.split('/')[1] || '',
-          medication_code: entry.resource.medicationCodeableConcept?.coding?.[0]?.code || '',
-          medication_display: entry.resource.medicationCodeableConcept?.text || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || '',
-          medication_system: entry.resource.medicationCodeableConcept?.coding?.[0]?.system || '',
-          status: entry.resource.status || '',
-          effective_start: entry.resource.effectiveDateTime || entry.resource.effectivePeriod?.start || '',
-          effective_end: entry.resource.effectivePeriod?.end || '',
-          dosage_quantity: entry.resource.dosage?.dose?.value || 0,
-          dosage_unit: entry.resource.dosage?.dose?.unit || '',
-          route_code: entry.resource.dosage?.route?.coding?.[0]?.code || '',
-          route_display: entry.resource.dosage?.route?.coding?.[0]?.display || '',
-          site_code: entry.resource.dosage?.site?.coding?.[0]?.code || '',
-          site_display: entry.resource.dosage?.site?.coding?.[0]?.display || '',
-          method_code: entry.resource.dosage?.method?.coding?.[0]?.code || '',
-          method_display: entry.resource.dosage?.method?.coding?.[0]?.display || '',
-          reason_code: entry.resource.reasonCode?.[0]?.coding?.[0]?.code || '',
-          reason_display: entry.resource.reasonCode?.[0]?.coding?.[0]?.display || ''
-        })) : [];
-        setMedicationAdministrations(administrations);
-      }).catch(() => setMedicationAdministrations([])),
+             fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+         const administrations = data.entry ? data.entry.map((entry: any) => ({
+           id: entry.resource.id,
+           patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+           encounter_id: entry.resource.context?.reference?.split('/')[1] || '',
+           medication_code: entry.resource.medicationCodeableConcept?.coding?.[0]?.code || '',
+           medication_display: entry.resource.medicationCodeableConcept?.coding?.[0]?.display || entry.resource.medicationCodeableConcept?.coding?.[0]?.code || 'Unknown Medication',
+           medication_system: entry.resource.medicationCodeableConcept?.coding?.[0]?.system || '',
+           status: entry.resource.status || '',
+           effective_start: entry.resource.effectiveDateTime || entry.resource.effectivePeriod?.start || '',
+           effective_end: entry.resource.effectivePeriod?.end || '',
+           dosage_quantity: entry.resource.dosage?.dose?.value || 0,
+           dosage_unit: entry.resource.dosage?.dose?.unit || '',
+           route_code: entry.resource.dosage?.route?.coding?.[0]?.code || '',
+           route_display: entry.resource.dosage?.route?.coding?.[0]?.display || '',
+           site_code: entry.resource.dosage?.site?.coding?.[0]?.code || '',
+           site_display: entry.resource.dosage?.site?.coding?.[0]?.display || '',
+           method_code: entry.resource.dosage?.method?.coding?.[0]?.code || '',
+           method_display: entry.resource.dosage?.method?.coding?.[0]?.display || '',
+           reason_code: entry.resource.reasonCode?.[0]?.coding?.[0]?.code || '',
+           reason_display: entry.resource.reasonCode?.[0]?.coding?.[0]?.display || ''
+         })) : [];
+         setMedicationAdministrations(administrations);
+       }).catch(() => setMedicationAdministrations([])),
       
-      fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
-        const requests = data.entry ? data.entry.map((entry: any) => ({
-          id: entry.resource.id,
-          patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
-          encounter_id: entry.resource.encounter?.reference?.split('/')[1] || '',
-          medication_code: entry.resource.medicationCodeableConcept?.coding?.[0]?.code || '',
-          medication_display: entry.resource.medicationCodeableConcept?.text || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || '',
-          medication_system: entry.resource.medicationCodeableConcept?.coding?.[0]?.system || '',
-          status: entry.resource.status || '',
-          intent: entry.resource.intent || '',
-          priority: entry.resource.priority || '',
-          authored_on: entry.resource.authoredOn || '',
-          dosage_quantity: entry.resource.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.value || 0,
-          dosage_unit: entry.resource.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.unit || '',
-          frequency_code: entry.resource.dosageInstruction?.[0]?.timing?.repeat?.frequency || '',
-          frequency_display: entry.resource.dosageInstruction?.[0]?.timing?.code?.text || '',
-          route_code: entry.resource.dosageInstruction?.[0]?.route?.coding?.[0]?.code || '',
-          route_display: entry.resource.dosageInstruction?.[0]?.route?.coding?.[0]?.display || '',
-          reason_code: entry.resource.reasonCode?.[0]?.coding?.[0]?.code || '',
-          reason_display: entry.resource.reasonCode?.[0]?.coding?.[0]?.display || ''
-        })) : [];
-        setMedicationRequests(requests);
-      }).catch(() => setMedicationRequests([])),
+             fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
+         const requests = data.entry ? data.entry.map((entry: any) => ({
+           id: entry.resource.id,
+           patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+           encounter_id: entry.resource.encounter?.reference?.split('/')[1] || '',
+           medication_code: entry.resource.medicationCodeableConcept?.coding?.[0]?.code || '',
+           medication_display: entry.resource.medicationCodeableConcept?.coding?.[0]?.code || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || 'Unknown Medication',
+           medication_system: entry.resource.medicationCodeableConcept?.coding?.[0]?.system || '',
+           status: entry.resource.status || '',
+           intent: entry.resource.intent || '',
+           priority: entry.resource.priority || '',
+           authored_on: entry.resource.authoredOn || '',
+           dosage_quantity: entry.resource.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.value || 0,
+           dosage_unit: entry.resource.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.unit || '',
+           frequency_code: entry.resource.dosageInstruction?.[0]?.timing?.repeat?.frequency || '',
+           frequency_display: entry.resource.dosageInstruction?.[0]?.timing?.code?.text || '',
+           route_code: entry.resource.dosageInstruction?.[0]?.route?.coding?.[0]?.code || '',
+           route_display: entry.resource.dosageInstruction?.[0]?.route?.coding?.[0]?.display || '',
+           reason_code: entry.resource.reasonCode?.[0]?.coding?.[0]?.code || '',
+           reason_display: entry.resource.reasonCode?.[0]?.coding?.[0]?.display || ''
+         })) : [];
+         setMedicationRequests(requests);
+       }).catch(() => setMedicationRequests([])),
       
       fetch(`${API_BASE}/Observation?patient=Patient/${patient.id}&_count=100`).then(res => res.json()).then(data => {
         const observations = data.entry ? data.entry.map((entry: any) => ({
