@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
 import { SidebarPatients } from './components/SidebarPatients';
-import { PatientHeaderBanner } from './components/PatientHeaderBanner';
 import { PatientTabs } from './components/PatientTabs';
 import { useTheme } from 'next-themes';
 
@@ -469,12 +468,7 @@ function App() {
         <div style={{ flex: 1 }}>
           {selectedPatient && patientSummary && (
             <div>
-              <PatientHeaderBanner
-                title={selectedPatient.family_name}
-                subtitle={`${selectedPatient.gender} • ${selectedPatient.birth_date} • ${selectedPatient.identifier || ''}`}
-                onToggleTheme={toggleTheme}
-                isDark={isDark}
-              />
+              {/* Patient header banner removed per request */}
               <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '20px' }}>
                 <tbody>
                   <tr><td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>ID</td><td style={{ padding: '8px', border: '1px solid #ddd' }}>{selectedPatient.id}</td></tr>
