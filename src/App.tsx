@@ -192,7 +192,7 @@ interface PatientSummary {
   };
 }
 
-const API_BASE = process.env.REACT_APP_API_URL || 'https://gel-landscapes-impaired-vitamin.trycloudflare.com';
+const API_BASE = process.env.REACT_APP_API_URL || 'https://gel-landscapes-impaired-vitamin.trycloudflare.com/fhir';
 
 function App() {
   const { theme, setTheme } = useTheme();

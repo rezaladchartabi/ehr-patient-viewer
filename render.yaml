@@ -19,7 +19,7 @@ services:
     staticPublishPath: ./build
     envVars:
       - key: REACT_APP_API_URL
-        value: https://gel-landscapes-impaired-vitamin.trycloudflare.com
+        value: https://gel-landscapes-impaired-vitamin.trycloudflare.com/fhir
     routes:
       - type: rewrite
         source: /*
