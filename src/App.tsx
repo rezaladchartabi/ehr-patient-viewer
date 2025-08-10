@@ -485,7 +485,7 @@ function App() {
                   {sortedEncounters.map((enc, idx) => (
                     <li
                       key={enc.id}
-                      className={"p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800 " + (selectedEncounterId === enc.id ? 'bg-blue-50 dark:bg-neutral-800/50' : '')}
+                      className={"p-3 cursor-pointer hover:bg-gray-50 dark:hover:bg-neutral-800 border-l-4 " + (selectedEncounterId === enc.id ? 'bg-blue-100 dark:bg-blue-900/30 border-blue-500' : 'border-transparent')}
                       onClick={() => setSelectedEncounterId(selectedEncounterId === enc.id ? null : enc.id)}
                     >
                       <div className="flex items-center justify-between">
