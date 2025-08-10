@@ -328,8 +328,16 @@ function App() {
             type="text"
             placeholder="Search patients, conditions, medications, encounters, observations, procedures, specimens..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => setShowSearchOverlay(true)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setShowSearchOverlay(true);
+            }}
             onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setShowSearchOverlay(false);
+                return;
+              }
               if (e.key === 'Enter') {
                 setIsSearching(true);
                 setShowSearchOverlay(true);
