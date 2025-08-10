@@ -539,54 +539,11 @@ function App() {
               if (e.key === 'Enter') {
                 setIsSearching(true);
                 setShowSearchOverlay(true);
-                Promise.all([
-                  fetch(`${API_BASE}/Patient?name=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
-                  fetch(`${API_BASE}/Condition?code=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
-                  fetch(`${API_BASE}/MedicationRequest?medication=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
-                  fetch(`${API_BASE}/Observation?code=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
-                ])
-                  .then(([patients, conditions, medications, observations]) => {
+                fetch(`${API_BASE}/Patient?name=${encodeURIComponent(searchQuery)}&_count=20`)
+                  .then(r => r.json())
+                  .then(patients => {
                     // Process search results from FHIR
                     const searchResults: Array<{ type: string; id: string; title: string; subtitle: string; patient_id: string }> = [];
-                    
-                    // Add conditions
-                    if (conditions.entry) {
-                      conditions.entry.forEach((entry: any) => {
-                        searchResults.push({
-                          type: 'condition',
-                          id: entry.resource.id,
-                          title: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || 'Condition',
-                          subtitle: entry.resource.category?.[0]?.coding?.[0]?.display || '',
-                          patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
-                        });
-                      });
-                    }
-                    
-                    // Add medications
-                    if (medications.entry) {
-                      medications.entry.forEach((entry: any) => {
-                        searchResults.push({
-                          type: 'medication-request',
-                          id: entry.resource.id,
-                          title: entry.resource.medicationCodeableConcept?.text || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || 'Medication',
-                          subtitle: entry.resource.status || '',
-                          patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
-                        });
-                      });
-                    }
-                    
-                    // Add observations
-                    if (observations.entry) {
-                      observations.entry.forEach((entry: any) => {
-                        searchResults.push({
-                          type: 'observation',
-                          id: entry.resource.id,
-                          title: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || 'Observation',
-                          subtitle: entry.resource.category?.[0]?.coding?.[0]?.display || '',
-                          patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
-                        });
-                      });
-                    }
                     
                     // Process patients
                     const searchPatients = patients.entry ? patients.entry.map((entry: any) => ({
@@ -609,54 +566,11 @@ function App() {
             onClick={() => {
               setIsSearching(true);
               setShowSearchOverlay(true);
-              Promise.all([
-                fetch(`${API_BASE}/Patient?name=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
-                fetch(`${API_BASE}/Condition?code=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
-                fetch(`${API_BASE}/MedicationRequest?medication=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
-                fetch(`${API_BASE}/Observation?code=${encodeURIComponent(searchQuery)}&_count=20`).then(r => r.json()),
-              ])
-                .then(([patients, conditions, medications, observations]) => {
+              fetch(`${API_BASE}/Patient?name=${encodeURIComponent(searchQuery)}&_count=20`)
+                .then(r => r.json())
+                .then(patients => {
                   // Process search results from FHIR
                   const searchResults: Array<{ type: string; id: string; title: string; subtitle: string; patient_id: string }> = [];
-                  
-                  // Add conditions
-                  if (conditions.entry) {
-                    conditions.entry.forEach((entry: any) => {
-                      searchResults.push({
-                        type: 'condition',
-                        id: entry.resource.id,
-                        title: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || 'Condition',
-                        subtitle: entry.resource.category?.[0]?.coding?.[0]?.display || '',
-                        patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
-                      });
-                    });
-                  }
-                  
-                  // Add medications
-                  if (medications.entry) {
-                    medications.entry.forEach((entry: any) => {
-                      searchResults.push({
-                        type: 'medication-request',
-                        id: entry.resource.id,
-                        title: entry.resource.medicationCodeableConcept?.text || entry.resource.medicationCodeableConcept?.coding?.[0]?.display || 'Medication',
-                        subtitle: entry.resource.status || '',
-                        patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
-                      });
-                    });
-                  }
-                  
-                  // Add observations
-                  if (observations.entry) {
-                    observations.entry.forEach((entry: any) => {
-                      searchResults.push({
-                        type: 'observation',
-                        id: entry.resource.id,
-                        title: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || 'Observation',
-                        subtitle: entry.resource.category?.[0]?.coding?.[0]?.display || '',
-                        patient_id: entry.resource.subject?.reference?.split('/')[1] || ''
-                      });
-                    });
-                  }
                   
                   // Process patients
                   const searchPatients = patients.entry ? patients.entry.map((entry: any) => ({
