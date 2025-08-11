@@ -34,34 +34,15 @@ const getCacheKey = (cursor?: string, allowlist?: string[]) => {
 // API base URL
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
-// Allowlist IDs for specific patients
+// Allowlist IDs for specific patients (only real IDs from FHIR server)
 const ALLOWLIST_IDS = [
   '03632093-8e46-5c64-8d8b-76ce07fa7b35',
-  '271cd75b-b278-51fe-a6cf-6efe41c3da2b',
-  '4c5b5b5b-5b5b-5b5b-5b5b-5b5b5b5b5b5b',
-  '5d6c6c6c-6c6c-6c6c-6c6c-6c6c6c6c6c6c',
-  '6e7d7d7d-7d7d-7d7d-7d7d-7d7d7d7d7d7d',
-  '7f8e8e8e-8e8e-8e8e-8e8e-8e8e8e8e8e8e',
-  '8g9f9f9f-9f9f-9f9f-9f9f-9f9f9f9f9f9f',
-  '9h0g0g0g-0g0g-0g0g-0g0g-0g0g0g0g0g0g',
-  '0i1h1h1h-1h1h-1h1h-1h1h-1h1h1h1h1h1h',
-  '1j2i2i2i-2i2i-2i2i-2i2i-2i2i2i2i2i2i',
-  '2k3j3j3j-3j3j-3j3j-3j3j-3j3j3j3j3j3j',
-  '3l4k4k4k-4k4k-4k4k-4k4k-4k4k4k4k4k4k',
-  '4m5l5l5l-5l5l-5l5l-5l5l-5l5l5l5l5l5l',
-  '5n6m6m6m-6m6m-6m6m-6m6m-6m6m6m6m6m6m',
-  '6o7n7n7n-7n7n-7n7n-7n7n-7n7n7n7n7n7n',
-  '7p8o8o8o-8o8o-8o8o-8o8o-8o8o8o8o8o8o',
-  '8q9p9p9p-9p9p-9p9p-9p9p-9p9p9p9p9p9p',
-  '9r0q0q0q-0q0q-0q0q-0q0q-0q0q0q0q0q0q',
-  '0s1r1r1r-1r1r-1r1r-1r1r-1r1r1r1r1r1r',
-  '1t2s2s2s-2s2s-2s2s-2s2s-2s2s2s2s2s2s',
-  '2u3t3t3t-3t3t-3t3t-3t3t-3t3t3t3t3t3t',
-  '3v4u4u4u-4u4u-4u4u-4u4u-4u4u4u4u4u4u',
-  '4w5v5v5v-5v5v-5v5v-5v5v-5v5v5v5v5v5v',
-  '5x6w6w6w-6w6w-6w6w-6w6w-6w6w6w6w6w6w',
-  '6y7x7x7x-7x7x-7x7x-7x7x-7x7x7x7x7x7x'
+  '271cd75b-b278-51fe-a6cf-6efe41c3da2b'
+  // Add more real patient IDs here as needed
 ];
+
+// Set to false to fetch all patients instead of just allowlisted ones
+const USE_ALLOWLIST = false;
 
 export const usePatientList = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -96,33 +77,61 @@ export const usePatientList = () => {
 
     try {
       let url: string;
+      let processedPatients: Patient[] = [];
       
-      if (ALLOWLIST_IDS.length > 0) {
-        // Use allowlist on initial load
-        url = `${API_BASE}/Patient/by-ids?ids=${ALLOWLIST_IDS.join(',')}`;
-      } else {
+      // Try allowlist first if we have IDs and allowlist is enabled
+      if (ALLOWLIST_IDS.length > 0 && USE_ALLOWLIST) {
+        try {
+          url = `${API_BASE}/Patient/by-ids?ids=${ALLOWLIST_IDS.join(',')}`;
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            processedPatients = data.entry ? data.entry.map((entry: any) => ({
+              id: entry.resource.id,
+              family_name: entry.resource.name?.[0]?.family || 'Unknown',
+              gender: entry.resource.gender || 'Unknown',
+              birth_date: entry.resource.birthDate || 'Unknown',
+              race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.valueCodeableConcept?.text,
+              ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')?.valueCodeableConcept?.text,
+              birth_sex: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex')?.valueCode,
+              identifier: entry.resource.identifier?.[0]?.value,
+              marital_status: entry.resource.maritalStatus?.text,
+              deceased_date: entry.resource.deceasedDateTime,
+              managing_organization: entry.resource.managingOrganization?.reference
+            })) : [];
+          }
+        } catch (allowlistError) {
+          console.warn('Allowlist fetch failed, falling back to regular patient fetch:', allowlistError);
+        }
+      }
+      
+      // If allowlist failed or is empty, fetch regular patients
+      if (processedPatients.length === 0) {
         url = `${API_BASE}/Patient?_count=${PATIENTS_PER_PAGE}`;
-      }
+        const res = await fetch(url);
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        const data = await res.json();
 
-      const res = await fetch(url);
-      if (!res.ok) {
-        throw new Error(`HTTP error! status: ${res.status}`);
-      }
-      const data = await res.json();
+        processedPatients = data.entry ? data.entry.map((entry: any) => ({
+          id: entry.resource.id,
+          family_name: entry.resource.name?.[0]?.family || 'Unknown',
+          gender: entry.resource.gender || 'Unknown',
+          birth_date: entry.resource.birthDate || 'Unknown',
+          race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.valueCodeableConcept?.text,
+          ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')?.valueCodeableConcept?.text,
+          birth_sex: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex')?.valueCode,
+          identifier: entry.resource.identifier?.[0]?.value,
+          marital_status: entry.resource.maritalStatus?.text,
+          deceased_date: entry.resource.deceasedDateTime,
+          managing_organization: entry.resource.managingOrganization?.reference
+        })) : [];
 
-      const processedPatients = data.entry ? data.entry.map((entry: any) => ({
-        id: entry.resource.id,
-        family_name: entry.resource.name?.[0]?.family || 'Unknown',
-        gender: entry.resource.gender || 'Unknown',
-        birth_date: entry.resource.birthDate || 'Unknown',
-        race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.valueCodeableConcept?.text,
-        ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us-core/StructureDefinition/us-core-ethnicity')?.valueCodeableConcept?.text,
-        birth_sex: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us-core/StructureDefinition/us-core-birthsex')?.valueCode,
-        identifier: entry.resource.identifier?.[0]?.value,
-        marital_status: entry.resource.maritalStatus?.text,
-        deceased_date: entry.resource.deceasedDateTime,
-        managing_organization: entry.resource.managingOrganization?.reference
-      })) : [];
+        // Set next page cursor for pagination
+        const nextLink = data.link?.find((l: any) => l.relation === 'next')?.url;
+        setNextPageCursor(nextLink || null);
+      }
 
       // Cache the data
       patientListCache.set(cacheKey, {
@@ -133,7 +142,9 @@ export const usePatientList = () => {
 
       setPatients(processedPatients);
       setPage(0);
-      setNextPageCursor(null);
+      if (processedPatients.length === 0) {
+        setNextPageCursor(null);
+      }
       setPrevPageCursors([]);
 
     } catch (err: any) {
