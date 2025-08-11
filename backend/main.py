@@ -11,6 +11,7 @@ import time
 import json
 from collections import defaultdict
 import os
+import sqlite3
 
 # Configuration
 FHIR_BASE_URL = "https://gel-landscapes-impaired-vitamin.trycloudflare.com/fhir"
@@ -33,6 +34,34 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 # Simple in-memory cache
 cache: Dict[str, Dict] = {}
 rate_limit_tracker: Dict[str, List[float]] = defaultdict(list)
+
+# Search index (SQLite FTS5)
+SEARCH_DB_PATH = os.path.join(os.path.dirname(__file__), "search_index.sqlite3")
+
+def _search_conn() -> sqlite3.Connection:
+    conn = sqlite3.connect(SEARCH_DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def ensure_search_schema():
+    conn = _search_conn()
+    cur = conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL;")
+    cur.execute(
+        """
+        CREATE VIRTUAL TABLE IF NOT EXISTS si USING fts5(
+            type,            -- 'patient' | 'medication-request' | 'medication-administration' | 'condition'
+            patient_id,      -- Patient UUID
+            rid,             -- resource id (or patient id for patient rows)
+            title,           -- primary display (name or medication/condition display)
+            subtitle,        -- secondary info (gender/birth or status/code)
+            ts,              -- ISO datetime used for ordering
+            tokenize='unicode61 remove_diacritics 2'
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
 
 class RateLimiter:
     def __init__(self, max_requests: int, window_seconds: int):
@@ -89,6 +118,7 @@ async def _startup_client():
     global _client
     if _client is None:
         _client = httpx.AsyncClient(timeout=30.0)
+    ensure_search_schema()
 
 @app.on_event("shutdown")
 async def _shutdown_client():
@@ -254,6 +284,100 @@ async def encounter_medications(patient: str, encounter: str, start: Optional[st
     if req_note or adm_note:
         note = "results include items inferred by time window"
     return {"requests": req, "administrations": adm, "note": note}
+
+def _si_insert(rows: List[Dict[str, Any]]):
+    if not rows:
+        return
+    conn = _search_conn()
+    cur = conn.cursor()
+    cur.executemany(
+        "INSERT INTO si(type,patient_id,rid,title,subtitle,ts) VALUES(?,?,?,?,?,?)",
+        [(r.get('type'), r.get('patient_id'), r.get('rid'), r.get('title'), r.get('subtitle'), r.get('ts')) for r in rows]
+    )
+    conn.commit()
+    conn.close()
+
+def _si_clear_patient(pid: str):
+    conn = _search_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM si WHERE patient_id=?", (pid,))
+    conn.commit()
+    conn.close()
+
+@app.post("/search/update")
+async def search_update(patient: str):
+    """Refresh index rows for a single patient (Patient/{uuid})."""
+    pid = patient.split('/')[-1]
+    _si_clear_patient(pid)
+    rows: List[Dict[str, Any]] = []
+    # Patient row
+    p = await fetch_from_fhir("/Patient", {"_id": pid, "_count": 1})
+    for e in p.get("entry", []) or []:
+        res = e.get("resource", {})
+        name = ((res.get("name") or [{}])[0]).get("family") or ''
+        gender = res.get("gender", '')
+        bdate = res.get("birthDate", '')
+        rid = res.get("id")
+        rows.append({
+            "type": "patient", "patient_id": rid, "rid": rid,
+            "title": name or "Unknown", "subtitle": f"{gender} • {bdate}", "ts": bdate or ''
+        })
+    # Medications
+    for path in ("/MedicationRequest", "/MedicationAdministration"):
+        entries = await _fetch_all_pages(path, {"patient": f"Patient/{pid}", "_count": 50})
+        for e in entries:
+            res = e.get("resource", {})
+            cc = ((res.get("medicationCodeableConcept") or {}).get("coding") or [{}])[0]
+            display = cc.get("display") or cc.get("code") or ''
+            status = res.get("status", '')
+            rid = res.get("id")
+            ts = res.get("authoredOn") or res.get("effectiveDateTime") or ((res.get("effectivePeriod") or {}).get("start")) or ''
+            rows.append({
+                "type": "medication-request" if path == "/MedicationRequest" else "medication-administration",
+                "patient_id": pid, "rid": rid, "title": display, "subtitle": status, "ts": ts
+            })
+    # Conditions
+    entries = await _fetch_all_pages("/Condition", {"patient": f"Patient/{pid}", "_count": 50})
+    for e in entries:
+        res = e.get("resource", {})
+        code = ((res.get("code") or {}).get("coding") or [{}])[0]
+        title = (res.get("code") or {}).get("text") or code.get("display") or code.get("code") or ''
+        status = ((res.get("clinicalStatus") or {}).get("coding") or [{}])[0].get("code", '')
+        rid = res.get("id")
+        ts = res.get("recordedDate") or ''
+        rows.append({
+            "type": "condition", "patient_id": pid, "rid": rid, "title": title, "subtitle": status, "ts": ts
+        })
+    _si_insert(rows)
+    return {"status": "ok", "indexed": len(rows)}
+
+@app.post("/search/reindex")
+async def search_reindex():
+    """Rebuild the search index for allowlisted patients."""
+    ids_env = os.getenv("ALLOWLIST_IDS", "").strip()
+    if not ids_env:
+        return {"status": "ok", "message": "no ALLOWLIST_IDS set", "indexed": 0}
+    ids = [i.strip() for i in ids_env.split(',') if i.strip()]
+    # Clear all
+    conn = _search_conn(); cur = conn.cursor(); cur.execute("DELETE FROM si"); conn.commit(); conn.close()
+    total = 0
+    for pid in ids:
+        r = await search_update(patient=f"Patient/{pid}")
+        total += int(r.get("indexed") or 0)
+    return {"status": "ok", "indexed": total}
+
+@app.get("/search")
+async def search_q(q: str, limit: int = 50):
+    if not q or not q.strip():
+        return {"items": []}
+    q = q.strip()
+    conn = _search_conn(); cur = conn.cursor()
+    # Prefix match for partials; FTS5 handles tokenization
+    query = q.replace('"', '') + '*'
+    cur.execute("SELECT type, patient_id, rid, title, subtitle, ts FROM si WHERE si MATCH ? ORDER BY ts DESC LIMIT ?", (query, limit))
+    items = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return {"items": items}
 
 @app.get("/patients/summary")
 async def patients_summary(patient: str):
