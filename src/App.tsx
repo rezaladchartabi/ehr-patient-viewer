@@ -337,35 +337,55 @@ function App() {
     setError(null);
     setActiveTab('conditions');
     
-    // Fetch patient summary (we'll build this from individual resource counts)
-    Promise.all([
-      fetch(`${API_BASE}/Condition?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
-      fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
-      fetch(`${API_BASE}/Encounter?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
-      fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
-      fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
-      fetch(`${API_BASE}/Observation?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
-      fetch(`${API_BASE}/Procedure?patient=Patient/${patient.id}&_count=1`).then(r => r.json()),
-      fetch(`${API_BASE}/Specimen?patient=Patient/${patient.id}&_count=1`).then(r => r.json())
+    // Fetch patient summary totals robustly using _summary=count
+    Promise.allSettled([
+      fetch(`${API_BASE}/Condition?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
+      fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
+      fetch(`${API_BASE}/Encounter?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
+      fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
+      fetch(`${API_BASE}/Observation?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
+      fetch(`${API_BASE}/Procedure?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
+      fetch(`${API_BASE}/Specimen?patient=Patient/${patient.id}&_summary=count`).then(r => r.json())
     ])
-      .then(([conditions, medications, encounters, medAdmins, medRequests, observations, procedures, specimens]) => {
-        const summary = {
+      .then((results) => {
+        const getTotal = (idx: number) => {
+          const res = results[idx];
+          if (res && res.status === 'fulfilled' && res.value && typeof res.value.total === 'number') {
+            return res.value.total;
+          }
+          return 0;
+        };
+        const summary: PatientSummary = {
           patient,
           summary: {
-            conditions: conditions.total || 0,
-            medications: medications.total || 0,
-            encounters: encounters.total || 0,
-            medication_administrations: medAdmins.total || 0,
-            medication_requests: medRequests.total || 0,
-            observations: observations.total || 0,
-            procedures: procedures.total || 0,
-            specimens: specimens.total || 0,
+            conditions: getTotal(0),
+            medications: getTotal(1),
+            encounters: getTotal(2),
+            medication_administrations: getTotal(3),
+            medication_requests: getTotal(1),
+            observations: getTotal(4),
+            procedures: getTotal(5),
+            specimens: getTotal(6),
           }
         };
         setPatientSummary(summary);
       })
-      .catch(err => {
-        setError('Failed to fetch patient summary');
+      .catch(() => {
+        // Should rarely hit due to allSettled, but keep safe fallback
+        const fallback: PatientSummary = {
+          patient,
+          summary: {
+            conditions: 0,
+            medications: 0,
+            encounters: 0,
+            medication_administrations: 0,
+            medication_requests: 0,
+            observations: 0,
+            procedures: 0,
+            specimens: 0,
+          }
+        };
+        setPatientSummary(fallback);
       });
     
     // Fetch all data types using FHIR endpoints
