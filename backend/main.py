@@ -506,7 +506,7 @@ async def verify_encounters(payload: Dict):
 
 @app.get("/search/patients")
 async def search_patients(q: str, _count: int = 20):
-    """Aggregate patient search across multiple FHIR params and dedupe by id."""
+    """Aggregate patient search across Patient + medication resources and dedupe by id."""
     if not q or not q.strip():
         return {"entry": [], "total": 0}
     q = q.strip()
@@ -530,6 +530,37 @@ async def search_patients(q: str, _count: int = 20):
                     results[rid] = e
         except Exception:
             continue
+
+    # Medication-backed search → find patients via MedicationRequest/Administration when text matches
+    med_patient_ids: List[str] = []
+    med_queries = [
+        ("/MedicationRequest", {"_text": q, "_count": _count}),
+        ("/MedicationAdministration", {"_text": q, "_count": _count}),
+        ("/MedicationRequest", {"medication": q, "_count": _count}),
+    ]
+    for path, params in med_queries:
+        try:
+            data = await fetch_from_fhir(path, params)
+            for e in data.get("entry", []) or []:
+                res = e.get("resource") or {}
+                subj = (res.get("subject") or {}).get("reference") or ''
+                pid = subj.split('/')[-1] if subj else ''
+                if pid:
+                    med_patient_ids.append(pid)
+        except Exception:
+            continue
+    # Dedupe and fetch Patient resources for medication hits
+    if med_patient_ids:
+        uniq_ids = sorted(set(med_patient_ids))
+        try:
+            pats = await fetch_from_fhir("/Patient", {"_id": ",".join(uniq_ids), "_count": len(uniq_ids)})
+            for e in pats.get("entry", []) or []:
+                rid = (e.get("resource") or {}).get("id")
+                if rid and rid not in results:
+                    results[rid] = e
+        except Exception:
+            pass
+
     entries = list(results.values())
     return {"resourceType": "Bundle", "type": "searchset", "total": len(entries), "entry": entries}
 
