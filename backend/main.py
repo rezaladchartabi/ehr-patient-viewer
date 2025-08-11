@@ -80,6 +80,19 @@ class OptimizedCache:
 # Initialize optimized cache
 optimized_cache = OptimizedCache(max_size=2000)
 
+# Initialize FastAPI app
+app = FastAPI(title="EHR FHIR Proxy", version="1.0.0")
+
+# Add middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
 def _search_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(SEARCH_DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -185,11 +198,36 @@ def _cursor_allowed(cursor_url: str) -> bool:
     except:
         return False
 
+@app.get("/paginate")
+async def paginate(cursor: str):
+    """Fetch a FHIR page via absolute 'next' link (cursor). Returns raw Bundle."""
+    if not _cursor_allowed(cursor):
+        raise HTTPException(status_code=400, detail="Invalid cursor host")
+
+    cache_key = get_cache_key("GET", "/paginate", cursor)
+    if optimized_cache.is_valid(cache_key):
+        cached = optimized_cache.get(cache_key)
+        if cached:
+            return cached["data"]
+
+    async with get_http_client() as client:
+        response = await client.get(cursor)
+        response.raise_for_status()
+        data = response.json()
+
+    optimized_cache.set(cache_key, data)
+    return data
+
 @app.on_event("startup")
 async def _startup_client():
     global http_client
     if http_client is None:
-        _client = httpx.AsyncClient(timeout=30.0)
+        limits = httpx.Limits(max_connections=MAX_CONNECTIONS, max_keepalive_connections=10)
+        http_client = httpx.AsyncClient(
+            limits=limits,
+            timeout=CONNECTION_TIMEOUT,
+            headers={"User-Agent": "EHR-Proxy/1.0"}
+        )
     ensure_search_schema()
 
 @app.on_event("shutdown")
