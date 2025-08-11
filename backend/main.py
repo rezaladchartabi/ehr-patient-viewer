@@ -1,10 +1,12 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 import httpx
 import asyncio
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 from urllib.parse import urlparse
+from urllib.parse import urlencode
 import time
 import json
 from collections import defaultdict
@@ -26,6 +28,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Simple in-memory cache
 cache: Dict[str, Dict] = {}
@@ -54,8 +57,15 @@ class RateLimiter:
 rate_limiter = RateLimiter(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW)
 
 def get_cache_key(method: str, path: str, params: str) -> str:
-    """Generate cache key from request details"""
+    """Generate cache key from request details (already-stringified params)."""
     return f"{method}:{path}:{params}"
+
+def build_cache_key(method: str, path: str, params_dict: Dict[str, Any]) -> str:
+    """Normalize params (sorted, urlencoded) for consistent cache keys."""
+    items = [(k, v) for k, v in params_dict.items() if v is not None and v != ""]
+    items.sort(key=lambda x: x[0])
+    query = urlencode(items, doseq=True)
+    return get_cache_key(method, path, query)
 
 def is_cacheable(path: str) -> bool:
     """Check if the endpoint should be cached"""
@@ -71,19 +81,37 @@ def is_cacheable(path: str) -> bool:
     ]
     return any(path.startswith(endpoint) for endpoint in cacheable_endpoints)
 
+# Reusable HTTP client
+_client: httpx.AsyncClient | None = None
+
+@app.on_event("startup")
+async def _startup_client():
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(timeout=30.0)
+
+@app.on_event("shutdown")
+async def _shutdown_client():
+    global _client
+    if _client is not None:
+        await _client.aclose()
+        _client = None
+
 async def fetch_from_fhir(path: str, params: Dict = None) -> Dict:
-    """Fetch data from FHIR server"""
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        url = f"{FHIR_BASE_URL}{path}"
-        response = await client.get(url, params=params)
-        
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=response.status_code,
-                detail=f"FHIR server error: {response.text}"
-            )
-        
-        return response.json()
+    """Fetch data from FHIR server with shared client"""
+    if _client is None:
+        # fallback safety
+        client = httpx.AsyncClient(timeout=30.0)
+    else:
+        client = _client
+    url = f"{FHIR_BASE_URL}{path}"
+    response = await client.get(url, params=params)
+    if response.status_code != 200:
+        raise HTTPException(
+            status_code=response.status_code,
+            detail=f"FHIR server error: {response.text}"
+        )
+    return response.json()
 
 def _cursor_allowed(cursor_url: str) -> bool:
     """Ensure the cursor URL points to the configured FHIR host/path to avoid SSRF."""
@@ -151,18 +179,16 @@ async def get_patients(
     name: Optional[str] = None
 ):
     """Get patients from FHIR server with caching"""
-    cache_key = get_cache_key("GET", "/Patient", f"count={_count}&name={name}")
-    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if name:
+        params["name"] = name
+    cache_key = build_cache_key("GET", "/Patient", params)
     # Check cache
     if cache_key in cache:
         cached_data = cache[cache_key]
         if time.time() - cached_data["timestamp"] < CACHE_TTL:
             return cached_data["data"]
-    
-    # Fetch from FHIR
-    params = {"_count": _count}
-    if name:
-        params["name"] = name
     
     data = await fetch_from_fhir("/Patient", params)
     
@@ -285,24 +311,50 @@ async def prefetch_patients(payload: Dict):
 
     return {"status": "ok", "counts": counts}
 
+@app.post("/verify/encounters")
+async def verify_encounters(payload: Dict):
+    """Return Encounter totals per patient id using _summary=count.
+
+    Body: {"ids": ["patient-id", ...]}
+    """
+    ids = payload.get("ids") or []
+    if not isinstance(ids, list) or not ids:
+        return {"status": "ok", "results": []}
+
+    results: List[Dict] = []
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for pid in ids:
+            try:
+                url = f"{FHIR_BASE_URL}/Encounter"
+                params = {"patient": f"Patient/{pid}", "_summary": "count"}
+                resp = await client.get(url, params=params)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    total = int(data.get("total") or 0)
+                    results.append({"id": pid, "total": total})
+                else:
+                    results.append({"id": pid, "error": resp.text})
+            except Exception as e:
+                results.append({"id": pid, "error": str(e)})
+
+    return {"status": "ok", "results": results}
+
 @app.get("/Condition")
 async def get_conditions(
     patient: Optional[str] = None,
     _count: Optional[int] = 100
 ):
     """Get conditions from FHIR server with caching"""
-    cache_key = get_cache_key("GET", "/Condition", f"patient={patient}&count={_count}")
-    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    cache_key = build_cache_key("GET", "/Condition", params)
     # Check cache
     if cache_key in cache:
         cached_data = cache[cache_key]
         if time.time() - cached_data["timestamp"] < CACHE_TTL:
             return cached_data["data"]
-    
-    # Fetch from FHIR
-    params = {"_count": _count}
-    if patient:
-        params["patient"] = patient
     
     data = await fetch_from_fhir("/Condition", params)
     
@@ -318,23 +370,24 @@ async def get_conditions(
 async def get_medication_requests(
     patient: Optional[str] = None,
     medication: Optional[str] = None,
+    encounter: Optional[str] = None,
     _count: Optional[int] = 100
 ):
     """Get medication requests from FHIR server with caching"""
-    cache_key = get_cache_key("GET", "/MedicationRequest", f"patient={patient}&medication={medication}&count={_count}")
-    
-    # Check cache
-    if cache_key in cache:
-        cached_data = cache[cache_key]
-        if time.time() - cached_data["timestamp"] < CACHE_TTL:
-            return cached_data["data"]
-    
     # Fetch from FHIR
     params = {"_count": _count}
     if patient:
         params["patient"] = patient
     if medication:
         params["medication"] = medication
+    if encounter:
+        params["encounter"] = encounter
+    cache_key = build_cache_key("GET", "/MedicationRequest", params)
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
     
     data = await fetch_from_fhir("/MedicationRequest", params)
     
@@ -349,21 +402,22 @@ async def get_medication_requests(
 @app.get("/MedicationAdministration")
 async def get_medication_administrations(
     patient: Optional[str] = None,
+    encounter: Optional[str] = None,
     _count: Optional[int] = 100
 ):
     """Get medication administrations from FHIR server with caching"""
-    cache_key = get_cache_key("GET", "/MedicationAdministration", f"patient={patient}&count={_count}")
-    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    if encounter:
+        params["encounter"] = encounter
+    cache_key = build_cache_key("GET", "/MedicationAdministration", params)
     # Check cache
     if cache_key in cache:
         cached_data = cache[cache_key]
         if time.time() - cached_data["timestamp"] < CACHE_TTL:
             return cached_data["data"]
-    
-    # Fetch from FHIR
-    params = {"_count": _count}
-    if patient:
-        params["patient"] = patient
     
     data = await fetch_from_fhir("/MedicationAdministration", params)
     
@@ -381,18 +435,16 @@ async def get_encounters(
     _count: Optional[int] = 100
 ):
     """Get encounters from FHIR server with caching"""
-    cache_key = get_cache_key("GET", "/Encounter", f"patient={patient}&count={_count}")
-    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    cache_key = build_cache_key("GET", "/Encounter", params)
     # Check cache
     if cache_key in cache:
         cached_data = cache[cache_key]
         if time.time() - cached_data["timestamp"] < CACHE_TTL:
             return cached_data["data"]
-    
-    # Fetch from FHIR
-    params = {"_count": _count}
-    if patient:
-        params["patient"] = patient
     
     data = await fetch_from_fhir("/Encounter", params)
     
@@ -411,20 +463,18 @@ async def get_observations(
     _count: Optional[int] = 100
 ):
     """Get observations from FHIR server with caching"""
-    cache_key = get_cache_key("GET", "/Observation", f"patient={patient}&code={code}&count={_count}")
-    
-    # Check cache
-    if cache_key in cache:
-        cached_data = cache[cache_key]
-        if time.time() - cached_data["timestamp"] < CACHE_TTL:
-            return cached_data["data"]
-    
     # Fetch from FHIR
     params = {"_count": _count}
     if patient:
         params["patient"] = patient
     if code:
         params["code"] = code
+    cache_key = build_cache_key("GET", "/Observation", params)
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
     
     data = await fetch_from_fhir("/Observation", params)
     
@@ -442,18 +492,16 @@ async def get_procedures(
     _count: Optional[int] = 100
 ):
     """Get procedures from FHIR server with caching"""
-    cache_key = get_cache_key("GET", "/Procedure", f"patient={patient}&count={_count}")
-    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    cache_key = build_cache_key("GET", "/Procedure", params)
     # Check cache
     if cache_key in cache:
         cached_data = cache[cache_key]
         if time.time() - cached_data["timestamp"] < CACHE_TTL:
             return cached_data["data"]
-    
-    # Fetch from FHIR
-    params = {"_count": _count}
-    if patient:
-        params["patient"] = patient
     
     data = await fetch_from_fhir("/Procedure", params)
     
@@ -471,18 +519,16 @@ async def get_specimens(
     _count: Optional[int] = 100
 ):
     """Get specimens from FHIR server with caching"""
-    cache_key = get_cache_key("GET", "/Specimen", f"patient={patient}&count={_count}")
-    
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    cache_key = build_cache_key("GET", "/Specimen", params)
     # Check cache
     if cache_key in cache:
         cached_data = cache[cache_key]
         if time.time() - cached_data["timestamp"] < CACHE_TTL:
             return cached_data["data"]
-    
-    # Fetch from FHIR
-    params = {"_count": _count}
-    if patient:
-        params["patient"] = patient
     
     data = await fetch_from_fhir("/Specimen", params)
     
