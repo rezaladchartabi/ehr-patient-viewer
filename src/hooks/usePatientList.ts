@@ -17,11 +17,11 @@ const isCacheValid = (timestamp: number, ttl: number) => {
 
 const clearExpiredCache = () => {
   const now = Date.now();
-  for (const [key, value] of patientListCache.entries()) {
+  Array.from(patientListCache.entries()).forEach(([key, value]) => {
     if (!isCacheValid(value.timestamp, value.ttl)) {
       patientListCache.delete(key);
     }
-  }
+  });
 };
 
 const getCacheKey = (cursor?: string, allowlist?: string[]) => {

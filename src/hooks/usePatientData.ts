@@ -201,11 +201,11 @@ const isCacheValid = (timestamp: number, ttl: number) => {
 
 const clearExpiredCache = () => {
   const now = Date.now();
-  for (const [key, value] of patientDataCache.entries()) {
+  Array.from(patientDataCache.entries()).forEach(([key, value]) => {
     if (!isCacheValid(value.timestamp, value.ttl)) {
       patientDataCache.delete(key);
     }
-  }
+  });
 };
 
 const getCacheKey = (patientId: string, encounterId?: string, resourceType?: string) => {
