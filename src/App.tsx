@@ -402,8 +402,26 @@ function App() {
     const enc = encounters.find(e => e.id === selectedEncounterId);
     const start = enc?.start_date;
     const end = enc?.end_date;
-    loadEncounterMedications(selectedPatient.id, selectedEncounterId, start, end);
-    loadEncounterAdministrations(selectedPatient.id, selectedEncounterId, start, end);
+    // Switch to combined backend endpoint for simplicity
+    const url = `${API_BASE}/encounter/medications?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounterId}` + (start ? `&start=${encodeURIComponent(start)}` : '') + (end ? `&end=${encodeURIComponent(end)}` : '');
+    setEncounterMedLoading(true);
+    setEncounterAdminLoading(true);
+    setEncounterMedNote(null);
+    setEncounterAdminNote(null);
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const reqs: MedicationRequest[] = (data?.requests || []).map((r: any) => ({
+          id: r.id, patient_id: r.patient_id, encounter_id: r.encounter_id, medication_code: r.medication_code, medication_display: r.medication_display, medication_system: r.medication_system, status: r.status, intent: r.intent, priority: r.priority, authored_on: r.authored_on, dosage_quantity: 0, dosage_unit: '', frequency_code: '', frequency_display: '', route_code: '', route_display: '', reason_code: '', reason_display: ''
+        }));
+        const admins: MedicationAdministration[] = (data?.administrations || []).map((a: any) => ({
+          id: a.id, patient_id: a.patient_id, encounter_id: a.encounter_id, medication_code: a.medication_code, medication_display: a.medication_display, medication_system: a.medication_system, status: a.status, effective_start: a.effective_start, effective_end: a.effective_end, dosage_quantity: 0, dosage_unit: '', route_code: '', route_display: '', site_code: '', site_display: '', method_code: '', method_display: '', reason_code: '', reason_display: ''
+        }));
+        setEncounterMedRequests(reqs);
+        setEncounterMedAdministrations(admins);
+        if (data?.note) { setEncounterMedNote(data.note); setEncounterAdminNote(data.note); }
+      })
+      .finally(() => { setEncounterMedLoading(false); setEncounterAdminLoading(false); });
   }, [selectedEncounterId]);
 
   // Helper to map a FHIR Bundle to our patient list and update cursors
@@ -468,32 +486,10 @@ function App() {
   const isUUID = (s: string) => /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/.test(s);
 
   const searchPatientsByQuery = async (q: string): Promise<Patient[]> => {
-    const urls: string[] = [];
-    const encoded = encodeURIComponent(q.trim());
     if (q.trim().length === 0) return [];
-    // Try multiple FHIR search params to maximize matches on this server
-    urls.push(`${API_BASE}/Patient?name=${encoded}&_count=20`);
-    urls.push(`${API_BASE}/Patient?family=${encoded}&_count=20`);
-    // Identifier search if user types an MRN-like value
-    urls.push(`${API_BASE}/Patient?identifier=${encoded}&_count=20`);
-    // Direct ID search when it's a UUID
-    if (isUUID(q)) {
-      urls.push(`${API_BASE}/Patient?_id=${encoded}&_count=20`);
-    }
-    const results = await Promise.allSettled(urls.map(u => fetch(u).then(r => r.json())));
-    const all: Patient[] = [];
-    for (const r of results) {
-      if (r.status === 'fulfilled') {
-        all.push(...parsePatientBundle(r.value));
-      }
-    }
-    // Deduplicate by id
-    const seen = new Set<string>();
-    const dedup: Patient[] = [];
-    for (const p of all) {
-      if (!seen.has(p.id)) { seen.add(p.id); dedup.push(p); }
-    }
-    return dedup;
+    const url = `${API_BASE}/search/patients?q=${encodeURIComponent(q.trim())}`;
+    const bundle = await fetch(url).then(r => r.json());
+    return parsePatientBundle(bundle);
   };
 
   // Navigate to a page via backend /paginate
@@ -536,41 +532,26 @@ function App() {
     setError(null);
     setActiveTab('conditions');
     
-    // Fetch patient summary totals robustly using _summary=count
-    Promise.allSettled([
-      fetch(`${API_BASE}/Condition?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
-      fetch(`${API_BASE}/MedicationRequest?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
-      fetch(`${API_BASE}/Encounter?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
-      fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
-      fetch(`${API_BASE}/Observation?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
-      fetch(`${API_BASE}/Procedure?patient=Patient/${patient.id}&_summary=count`).then(r => r.json()),
-      fetch(`${API_BASE}/Specimen?patient=Patient/${patient.id}&_summary=count`).then(r => r.json())
-    ])
-      .then((results) => {
-        const getTotal = (idx: number) => {
-          const res = results[idx];
-          if (res && res.status === 'fulfilled' && res.value && typeof res.value.total === 'number') {
-            return res.value.total;
-          }
-          return 0;
-        };
-        const summary: PatientSummary = {
+    // Fetch patient summary via combined backend endpoint
+    fetch(`${API_BASE}/patients/summary?patient=Patient/${patient.id}`)
+      .then(r => r.json())
+      .then(data => {
+        const ps: PatientSummary = {
           patient,
           summary: {
-            conditions: getTotal(0),
-            medications: getTotal(1),
-            encounters: getTotal(2),
-            medication_administrations: getTotal(3),
-            medication_requests: getTotal(1),
-            observations: getTotal(4),
-            procedures: getTotal(5),
-            specimens: getTotal(6),
+            conditions: data?.summary?.conditions || 0,
+            medications: data?.summary?.medications || 0,
+            encounters: data?.summary?.encounters || 0,
+            medication_administrations: data?.summary?.medication_administrations || 0,
+            medication_requests: data?.summary?.medications || 0,
+            observations: data?.summary?.observations || 0,
+            procedures: data?.summary?.procedures || 0,
+            specimens: data?.summary?.specimens || 0,
           }
         };
-        setPatientSummary(summary);
+        setPatientSummary(ps);
       })
       .catch(() => {
-        // Should rarely hit due to allSettled, but keep safe fallback
         const fallback: PatientSummary = {
           patient,
           summary: {

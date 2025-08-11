@@ -504,6 +504,35 @@ async def verify_encounters(payload: Dict):
 
     return {"status": "ok", "results": results}
 
+@app.get("/search/patients")
+async def search_patients(q: str, _count: int = 20):
+    """Aggregate patient search across multiple FHIR params and dedupe by id."""
+    if not q or not q.strip():
+        return {"entry": [], "total": 0}
+    q = q.strip()
+    queries = [
+        ("/Patient", {"name": q, "_count": _count}),
+        ("/Patient", {"family": q, "_count": _count}),
+        ("/Patient", {"identifier": q, "_count": _count}),
+    ]
+    # If UUID-ish, also try _id
+    import re
+    if re.match(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", q):
+        queries.append(("/Patient", {"_id": q, "_count": _count}))
+
+    results: Dict[str, Dict] = {}
+    for path, params in queries:
+        try:
+            data = await fetch_from_fhir(path, params)
+            for e in data.get("entry", []) or []:
+                rid = (e.get("resource") or {}).get("id")
+                if rid and rid not in results:
+                    results[rid] = e
+        except Exception:
+            continue
+    entries = list(results.values())
+    return {"resourceType": "Bundle", "type": "searchset", "total": len(entries), "entry": entries}
+
 @app.get("/Condition")
 async def get_conditions(
     patient: Optional[str] = None,
