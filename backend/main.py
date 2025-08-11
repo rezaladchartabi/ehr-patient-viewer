@@ -224,6 +224,67 @@ async def get_patients_by_ids(ids: str):
     cache[cache_key] = {"data": result, "timestamp": time.time()}
     return result
 
+@app.post("/prefetch")
+async def prefetch_patients(payload: Dict):
+    """Warm cache by pulling data for a list of patient IDs.
+
+    Body: {"ids": ["patient-id", ...], "force": false}
+    Returns counts of cached bundles by resource type.
+    """
+    ids = payload.get("ids") or []
+    force = bool(payload.get("force", False))
+    if not isinstance(ids, list) or not ids:
+        return {"status": "ok", "message": "no ids provided", "counts": {}}
+
+    resource_types = [
+        ("/Condition", {"_count": 100}),
+        ("/MedicationRequest", {"_count": 100}),
+        ("/Encounter", {"_count": 100}),
+        ("/MedicationAdministration", {"_count": 100}),
+        ("/Observation", {"_count": 100}),
+        ("/Procedure", {"_count": 100}),
+        ("/Specimen", {"_count": 100}),
+    ]
+
+    counts: Dict[str, int] = {"Patient": 0}
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        # Prefetch patients in batches using _id
+        batch_size = 20
+        total_entries = 0
+        for i in range(0, len(ids), batch_size):
+            batch = ids[i:i+batch_size]
+            params = {"_id": ",".join(batch), "_count": len(batch)}
+            url = f"{FHIR_BASE_URL}/Patient"
+            resp = await client.get(url, params=params)
+            if resp.status_code == 200:
+                bundle = resp.json()
+                entries = len(bundle.get("entry") or [])
+                total_entries += entries
+                # cache Patient batch
+                ckey = get_cache_key("GET", "/Patient", f"_id={params['_id']}&_count={params['_count']}")
+                if force or ckey not in cache:
+                    cache[ckey] = {"data": bundle, "timestamp": time.time()}
+        counts["Patient"] = total_entries
+
+        # Prefetch per-patient resources
+        for pid in ids:
+            for path, base_params in resource_types:
+                params = dict(base_params)
+                params["patient"] = f"Patient/{pid}"
+                url = f"{FHIR_BASE_URL}{path}"
+                resp = await client.get(url, params=params)
+                if resp.status_code == 200:
+                    bundle = resp.json()
+                    entries = len(bundle.get("entry") or [])
+                    rname = path.strip("/")
+                    counts[rname] = counts.get(rname, 0) + entries
+                    ckey = get_cache_key("GET", path, f"patient={params['patient']}&count={params.get('_count')}")
+                    if force or ckey not in cache:
+                        cache[ckey] = {"data": bundle, "timestamp": time.time()}
+
+    return {"status": "ok", "counts": counts}
+
 @app.get("/Condition")
 async def get_conditions(
     patient: Optional[str] = None,
