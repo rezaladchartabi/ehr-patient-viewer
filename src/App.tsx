@@ -454,6 +454,48 @@ function App() {
       .finally(() => setLoading(false));
   };
 
+  // --- Search helpers ---
+  const parsePatientBundle = (bundle: any): Patient[] => {
+    return bundle.entry ? bundle.entry.map((entry: any) => ({
+      id: entry.resource.id,
+      family_name: entry.resource.name?.[0]?.family || 'Unknown',
+      gender: entry.resource.gender || 'Unknown',
+      birth_date: entry.resource.birthDate || 'Unknown',
+      identifier: entry.resource.identifier?.[0]?.value || ''
+    })) : [];
+  };
+
+  const isUUID = (s: string) => /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/.test(s);
+
+  const searchPatientsByQuery = async (q: string): Promise<Patient[]> => {
+    const urls: string[] = [];
+    const encoded = encodeURIComponent(q.trim());
+    if (q.trim().length === 0) return [];
+    // Try multiple FHIR search params to maximize matches on this server
+    urls.push(`${API_BASE}/Patient?name=${encoded}&_count=20`);
+    urls.push(`${API_BASE}/Patient?family=${encoded}&_count=20`);
+    // Identifier search if user types an MRN-like value
+    urls.push(`${API_BASE}/Patient?identifier=${encoded}&_count=20`);
+    // Direct ID search when it's a UUID
+    if (isUUID(q)) {
+      urls.push(`${API_BASE}/Patient?_id=${encoded}&_count=20`);
+    }
+    const results = await Promise.allSettled(urls.map(u => fetch(u).then(r => r.json())));
+    const all: Patient[] = [];
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        all.push(...parsePatientBundle(r.value));
+      }
+    }
+    // Deduplicate by id
+    const seen = new Set<string>();
+    const dedup: Patient[] = [];
+    for (const p of all) {
+      if (!seen.has(p.id)) { seen.add(p.id); dedup.push(p); }
+    }
+    return dedup;
+  };
+
   // Navigate to a page via backend /paginate
   const loadByCursor = (cursor: string, goingBack: boolean) => {
     setLoading(true);
@@ -764,27 +806,14 @@ function App() {
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                setIsSearching(true);
-                setShowSearchOverlay(true);
-                fetch(`${API_BASE}/Patient?name=${encodeURIComponent(searchQuery)}&_count=20`)
-                  .then(r => r.json())
-                  .then(patients => {
-                    // Process search results from FHIR
-                    const searchResults: Array<{ type: string; id: string; title: string; subtitle: string; patient_id: string }> = [];
-                    
-                    // Process patients
-                    const searchPatients = patients.entry ? patients.entry.map((entry: any) => ({
-                      id: entry.resource.id,
-                      family_name: entry.resource.name?.[0]?.family || 'Unknown',
-                      gender: entry.resource.gender || 'Unknown',
-                      birth_date: entry.resource.birthDate || 'Unknown',
-                      identifier: entry.resource.identifier?.[0]?.value || ''
-                    })) : [];
-                    
-                    setSearchResults(searchResults);
-                    setSearchPatients(searchPatients);
-                  })
-                  .finally(() => setIsSearching(false));
+              setIsSearching(true);
+              setShowSearchOverlay(true);
+              searchPatientsByQuery(searchQuery)
+                .then(list => {
+                  setSearchResults([]);
+                  setSearchPatients(list);
+                })
+                .finally(() => setIsSearching(false));
               }
             }}
             className="w-full rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 shadow-soft focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -793,23 +822,10 @@ function App() {
             onClick={() => {
               setIsSearching(true);
               setShowSearchOverlay(true);
-              fetch(`${API_BASE}/Patient?name=${encodeURIComponent(searchQuery)}&_count=20`)
-                .then(r => r.json())
-                .then(patients => {
-                  // Process search results from FHIR
-                  const searchResults: Array<{ type: string; id: string; title: string; subtitle: string; patient_id: string }> = [];
-                  
-                  // Process patients
-                  const searchPatients = patients.entry ? patients.entry.map((entry: any) => ({
-                    id: entry.resource.id,
-                    family_name: entry.resource.name?.[0]?.family || 'Unknown',
-                    gender: entry.resource.gender || 'Unknown',
-                    birth_date: entry.resource.birthDate || 'Unknown',
-                    identifier: entry.resource.identifier?.[0]?.value || ''
-                  })) : [];
-                  
-                  setSearchResults(searchResults);
-                  setSearchPatients(searchPatients);
+              searchPatientsByQuery(searchQuery)
+                .then(list => {
+                  setSearchResults([]);
+                  setSearchPatients(list);
                 })
                 .finally(() => setIsSearching(false));
             }}
