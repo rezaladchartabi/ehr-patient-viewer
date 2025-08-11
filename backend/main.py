@@ -159,16 +159,16 @@ async def _fetch_all_pages(path: str, params: Dict[str, Any]) -> List[Dict]:
     next_link = next((l.get("url") for l in links if l.get("relation") == "next"), None)
     # Follow next links using shared client (direct GET)
     if next_link:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            cursor = next_link
-            while cursor:
-                resp = await client.get(cursor)
-                if resp.status_code != 200:
-                    break
-                page = resp.json()
-                entries.extend(page.get("entry") or [])
-                links = page.get("link") or []
-                cursor = next((l.get("url") for l in links if l.get("relation") == "next"), None)
+        client = _client or httpx.AsyncClient(timeout=30.0)
+        cursor = next_link
+        while cursor:
+            resp = await client.get(cursor)
+            if resp.status_code != 200:
+                break
+            page = resp.json()
+            entries.extend(page.get("entry") or [])
+            links = page.get("link") or []
+            cursor = next((l.get("url") for l in links if l.get("relation") == "next"), None)
     return entries
 
 def _map_med_req(res: Dict[str, Any]) -> Dict[str, Any]:
@@ -433,7 +433,48 @@ async def prefetch_patients(payload: Dict):
                     if force or ckey not in cache:
                         cache[ckey] = {"data": bundle, "timestamp": time.time()}
 
+            # Warm top recent encounters and medications per encounter
+            try:
+                enc_entries = await _fetch_all_pages("/Encounter", {"patient": f"Patient/{pid}", "_count": 50})
+                # map with start for sorting
+                def _start(e: Dict[str, Any]):
+                    res = e.get("resource", {})
+                    s = ((res.get("period") or {}).get("start")) or ''
+                    try:
+                        return time.mktime(time.strptime(s[:19], "%Y-%m-%dT%H:%M:%S"))
+                    except Exception:
+                        return 0
+                enc_entries.sort(key=_start, reverse=True)
+                recent_n = int(os.getenv("WARM_RECENT_ENCOUNTERS", "2"))
+                for entry in enc_entries[:recent_n]:
+                    res = entry.get("resource", {})
+                    enc_id = res.get("id")
+                    start = ((res.get("period") or {}).get("start")) or ''
+                    end = ((res.get("period") or {}).get("end")) or ''
+                    # trigger combined handler to warm
+                    await encounter_medications(patient=f"Patient/{pid}", encounter=f"Encounter/{enc_id}", start=start, end=end)
+            except Exception:
+                pass
+
     return {"status": "ok", "counts": counts}
+
+# Background scheduler to warm cache from allowlist
+async def _scheduled_prefetch_loop():
+    await asyncio.sleep(5)
+    while True:
+        try:
+            ids_env = os.getenv("ALLOWLIST_IDS", "").strip()
+            if ids_env:
+                ids = [i.strip() for i in ids_env.split(',') if i.strip()]
+                await prefetch_patients({"ids": ids, "force": False})
+        except Exception:
+            pass
+        interval = int(os.getenv("PREFETCH_INTERVAL_MINUTES", "60"))
+        await asyncio.sleep(interval * 60)
+
+@app.on_event("startup")
+async def _start_scheduler():
+    asyncio.create_task(_scheduled_prefetch_loop())
 
 @app.post("/verify/encounters")
 async def verify_encounters(payload: Dict):
