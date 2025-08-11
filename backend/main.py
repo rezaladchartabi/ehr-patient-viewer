@@ -512,7 +512,9 @@ async def search_patients(q: str, _count: int = 20):
     q = q.strip()
     queries = [
         ("/Patient", {"name": q, "_count": _count}),
+        ("/Patient", {"name:contains": q, "_count": _count}),
         ("/Patient", {"family": q, "_count": _count}),
+        ("/Patient", {"family:contains": q, "_count": _count}),
         ("/Patient", {"identifier": q, "_count": _count}),
     ]
     # If UUID-ish, also try _id
@@ -537,6 +539,8 @@ async def search_patients(q: str, _count: int = 20):
         ("/MedicationRequest", {"_text": q, "_count": _count}),
         ("/MedicationAdministration", {"_text": q, "_count": _count}),
         ("/MedicationRequest", {"medication": q, "_count": _count}),
+        ("/MedicationRequest", {"medication:text": q, "_count": _count}),
+        ("/MedicationAdministration", {"medication:text": q, "_count": _count}),
     ]
     for path, params in med_queries:
         try:
