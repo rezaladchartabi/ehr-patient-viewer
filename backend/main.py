@@ -285,6 +285,147 @@ async def encounter_medications(patient: str, encounter: str, start: Optional[st
         note = "results include items inferred by time window"
     return {"requests": req, "administrations": adm, "note": note}
 
+@app.get("/encounter/observations")
+async def encounter_observations(patient: str, encounter: str, start: Optional[str] = None, end: Optional[str] = None):
+    """Get observations for a specific encounter with time-window fallback"""
+    # First try to get observations directly linked to the encounter
+    params = {
+        "patient": patient,
+        "encounter": encounter,
+        "_count": 100
+    }
+    
+    try:
+        data = await fetch_from_fhir("/Observation", params)
+        observations = data.get("entry", [])
+        
+        # If we found observations, return them
+        if observations:
+            return {
+                "observations": observations,
+                "note": f"Found {len(observations)} observations directly linked to encounter"
+            }
+    except Exception as e:
+        print(f"Error fetching encounter-linked observations: {e}")
+    
+    # Fallback: get observations within encounter time window
+    if start and end:
+        try:
+            # Get observations for the patient within the time window
+            time_params = {
+                "patient": patient,
+                "date": f"ge{start}&date=le{end}",
+                "_count": 100
+            }
+            data = await fetch_from_fhir("/Observation", time_params)
+            observations = data.get("entry", [])
+            
+            return {
+                "observations": observations,
+                "note": f"Found {len(observations)} observations within encounter time window ({start} to {end})"
+            }
+        except Exception as e:
+            print(f"Error fetching time-window observations: {e}")
+    
+    return {
+        "observations": [],
+        "note": "No observations found for this encounter"
+    }
+
+@app.get("/encounter/procedures")
+async def encounter_procedures(patient: str, encounter: str, start: Optional[str] = None, end: Optional[str] = None):
+    """Get procedures for a specific encounter with time-window fallback"""
+    # First try to get procedures directly linked to the encounter
+    params = {
+        "patient": patient,
+        "encounter": encounter,
+        "_count": 100
+    }
+    
+    try:
+        data = await fetch_from_fhir("/Procedure", params)
+        procedures = data.get("entry", [])
+        
+        # If we found procedures, return them
+        if procedures:
+            return {
+                "procedures": procedures,
+                "note": f"Found {len(procedures)} procedures directly linked to encounter"
+            }
+    except Exception as e:
+        print(f"Error fetching encounter-linked procedures: {e}")
+    
+    # Fallback: get procedures within encounter time window
+    if start and end:
+        try:
+            # Get procedures for the patient within the time window
+            time_params = {
+                "patient": patient,
+                "date": f"ge{start}&date=le{end}",
+                "_count": 100
+            }
+            data = await fetch_from_fhir("/Procedure", time_params)
+            procedures = data.get("entry", [])
+            
+            return {
+                "procedures": procedures,
+                "note": f"Found {len(procedures)} procedures within encounter time window ({start} to {end})"
+            }
+        except Exception as e:
+            print(f"Error fetching time-window procedures: {e}")
+    
+    return {
+        "procedures": [],
+        "note": "No procedures found for this encounter"
+    }
+
+@app.get("/encounter/specimens")
+async def encounter_specimens(patient: str, encounter: str, start: Optional[str] = None, end: Optional[str] = None):
+    """Get specimens for a specific encounter with time-window fallback"""
+    # First try to get specimens directly linked to the encounter
+    params = {
+        "patient": patient,
+        "encounter": encounter,
+        "_count": 100
+    }
+    
+    try:
+        data = await fetch_from_fhir("/Specimen", params)
+        specimens = data.get("entry", [])
+        
+        # If we found specimens, return them
+        if specimens:
+            return {
+                "specimens": specimens,
+                "note": f"Found {len(specimens)} specimens directly linked to encounter"
+            }
+    except Exception as e:
+        print(f"Error fetching encounter-linked specimens: {e}")
+    
+    # Fallback: get specimens within encounter time window
+    if start and end:
+        try:
+            # Get specimens for the patient within the time window
+            time_params = {
+                "patient": patient,
+                "collected": f"ge{start}&collected=le{end}",
+                "_count": 100
+            }
+            data = await fetch_from_fhir("/Specimen", time_params)
+            specimens = data.get("entry", [])
+            
+            return {
+                "specimens": specimens,
+                "note": f"Found {len(specimens)} specimens within encounter time window ({start} to {end})"
+            }
+        except Exception as e:
+            print(f"Error fetching time-window specimens: {e}")
+    
+    return {
+        "specimens": [],
+        "note": "No specimens found for this encounter"
+    }
+
 def _si_insert(rows: List[Dict[str, Any]]):
     if not rows:
         return
@@ -372,10 +513,28 @@ async def search_q(q: str, limit: int = 50):
         return {"items": []}
     q = q.strip()
     conn = _search_conn(); cur = conn.cursor()
-    # Prefix match for partials; FTS5 handles tokenization
-    query = q.replace('"', '') + '*'
-    cur.execute("SELECT type, patient_id, rid, title, subtitle, ts FROM si WHERE si MATCH ? ORDER BY ts DESC LIMIT ?", (query, limit))
+    # Expand common synonyms/classes (e.g., statin → specific molecules)
+    ql = q.lower()
+    expansions = {
+        'statin': ['atorvastatin','simvastatin','rosuvastatin','pravastatin','lovastatin','fluvastatin','pitavastatin'],
+        'heparin': ['heparin','enoxaparin','dalteparin']
+    }
+    terms = [ql]
+    for k, vals in expansions.items():
+        if k in ql:
+            terms.extend(vals)
+    # Build FTS OR query with prefix matching
+    or_query = ' OR '.join([t.replace('"','') + '*' for t in terms])
+    cur.execute("SELECT type, patient_id, rid, title, subtitle, ts FROM si WHERE si MATCH ? ORDER BY ts DESC LIMIT ?", (or_query, limit))
     items = [dict(row) for row in cur.fetchall()]
+    # Substring fallback (handles mid-word matches like 'statin')
+    if not items:
+        like = f"%{ql}%"
+        cur.execute(
+            "SELECT type, patient_id, rid, title, subtitle, ts FROM si WHERE lower(title) LIKE ? OR lower(subtitle) LIKE ? ORDER BY ts DESC LIMIT ?",
+            (like, like, limit)
+        )
+        items = [dict(row) for row in cur.fetchall()]
     conn.close()
     return {"items": items}
 

@@ -228,6 +228,17 @@ function App() {
   const [encounterAdminLoading, setEncounterAdminLoading] = useState<boolean>(false);
   const [encounterMedNote, setEncounterMedNote] = useState<string | null>(null);
   const [encounterAdminNote, setEncounterAdminNote] = useState<string | null>(null);
+  
+  // New state for encounter-scoped data
+  const [encounterObservations, setEncounterObservations] = useState<Observation[]>([]);
+  const [encounterProcedures, setEncounterProcedures] = useState<Procedure[]>([]);
+  const [encounterSpecimens, setEncounterSpecimens] = useState<Specimen[]>([]);
+  const [encounterObsLoading, setEncounterObsLoading] = useState(false);
+  const [encounterProcLoading, setEncounterProcLoading] = useState(false);
+  const [encounterSpecLoading, setEncounterSpecLoading] = useState(false);
+  const [encounterObsNote, setEncounterObsNote] = useState<string>('');
+  const [encounterProcNote, setEncounterProcNote] = useState<string>('');
+  const [encounterSpecNote, setEncounterSpecNote] = useState<string>('');
 
   const getEncounterCacheKey = (patientId: string, encounterId: string, kind: 'req'|'admin') => `${patientId}|${encounterId}|${kind}`;
 
@@ -419,6 +430,201 @@ function App() {
       })
       .finally(() => { setEncounterMedLoading(false); setEncounterAdminLoading(false); });
   }, [selectedEncounterId]);
+
+  // Encounter-scoped medication fetching
+  useEffect(() => {
+    if (!selectedPatient || !selectedEncounterId) {
+      setMedicationRequests([]);
+      setMedicationAdministrations([]);
+      return;
+    }
+
+    const selectedEnc = encounters.find(e => e.id === selectedEncounterId);
+    const encounterStart = selectedEnc?.start_date;
+    const encounterEnd = selectedEnc?.end_date;
+
+    const fetchEncounterMeds = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const params = new URLSearchParams();
+        params.append('patient', `Patient/${selectedPatient.id}`);
+        params.append('encounter', `Encounter/${selectedEncounterId}`);
+        if (encounterStart) params.append('start', encounterStart);
+        if (encounterEnd) params.append('end', encounterEnd);
+
+        const res = await fetch(`${API_BASE}/encounter/medications?${params.toString()}`);
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        const data = await res.json();
+        setMedicationRequests(data.requests);
+        setMedicationAdministrations(data.administrations);
+        if (data.note) {
+          console.warn('Encounter medication fetch note:', data.note);
+        }
+      } catch (err: any) {
+        setError(`Failed to fetch encounter medications: ${err.message}`);
+        console.error('Failed to fetch encounter medications:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchEncounterMeds();
+  }, [selectedPatient, selectedEncounterId, encounters, API_BASE]);
+
+  // Encounter-scoped observations, procedures, and specimens fetching
+  useEffect(() => {
+    if (!selectedPatient || !selectedEncounterId) {
+      setEncounterObservations([]);
+      setEncounterProcedures([]);
+      setEncounterSpecimens([]);
+      return;
+    }
+
+    const selectedEnc = encounters.find(e => e.id === selectedEncounterId);
+    const encounterStart = selectedEnc?.start_date;
+    const encounterEnd = selectedEnc?.end_date;
+
+    const fetchEncounterData = async () => {
+      try {
+        // Fetch observations
+        setEncounterObsLoading(true);
+        const obsParams = new URLSearchParams();
+        obsParams.append('patient', `Patient/${selectedPatient.id}`);
+        obsParams.append('encounter', `Encounter/${selectedEncounterId}`);
+        if (encounterStart) obsParams.append('start', encounterStart);
+        if (encounterEnd) obsParams.append('end', encounterEnd);
+
+        const obsRes = await fetch(`${API_BASE}/encounter/observations?${obsParams.toString()}`);
+        if (obsRes.ok) {
+          const obsData = await obsRes.json();
+          const observations = obsData.observations ? obsData.observations.map((entry: any) => ({
+            id: entry.resource.id,
+            patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+            encounter_id: entry.resource.encounter?.reference?.split('/')[1] || '',
+            observation_type: entry.resource.category?.[0]?.coding?.[0]?.display || '',
+            code: entry.resource.code?.coding?.[0]?.code || '',
+            code_display: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || '',
+            code_system: entry.resource.code?.coding?.[0]?.system || '',
+            status: entry.resource.status || '',
+            effective_datetime: entry.resource.effectiveDateTime || '',
+            issued_datetime: entry.resource.issued || '',
+            value_quantity: entry.resource.valueQuantity?.value || 0,
+            value_unit: entry.resource.valueQuantity?.unit || '',
+            value_code: entry.resource.valueCodeableConcept?.coding?.[0]?.code || '',
+            value_display: entry.resource.valueCodeableConcept?.coding?.[0]?.display || '',
+            value_string: entry.resource.valueString || '',
+            value_boolean: entry.resource.valueBoolean || false,
+            value_datetime: entry.resource.valueDateTime || '',
+            category_code: entry.resource.category?.[0]?.coding?.[0]?.code || '',
+            category_display: entry.resource.category?.[0]?.coding?.[0]?.display || '',
+            interpretation_code: entry.resource.interpretation?.[0]?.coding?.[0]?.code || '',
+            interpretation_display: entry.resource.interpretation?.[0]?.coding?.[0]?.display || '',
+            reference_range_low: entry.resource.referenceRange?.[0]?.low?.value || 0,
+            reference_range_high: entry.resource.referenceRange?.[0]?.high?.value || 0,
+            reference_range_unit: entry.resource.referenceRange?.[0]?.low?.unit || ''
+          })) : [];
+          setEncounterObservations(observations);
+          setEncounterObsNote(obsData.note || '');
+        }
+      } catch (err: any) {
+        console.error('Failed to fetch encounter observations:', err);
+        setEncounterObsNote('Failed to fetch observations');
+      } finally {
+        setEncounterObsLoading(false);
+      }
+
+      try {
+        // Fetch procedures
+        setEncounterProcLoading(true);
+        const procParams = new URLSearchParams();
+        procParams.append('patient', `Patient/${selectedPatient.id}`);
+        procParams.append('encounter', `Encounter/${selectedEncounterId}`);
+        if (encounterStart) procParams.append('start', encounterStart);
+        if (encounterEnd) procParams.append('end', encounterEnd);
+
+        const procRes = await fetch(`${API_BASE}/encounter/procedures?${procParams.toString()}`);
+        if (procRes.ok) {
+          const procData = await procRes.json();
+          const procedures = procData.procedures ? procData.procedures.map((entry: any) => ({
+            id: entry.resource.id,
+            patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+            encounter_id: entry.resource.encounter?.reference?.split('/')[1] || '',
+            procedure_code: entry.resource.code?.coding?.[0]?.code || '',
+            procedure_display: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || '',
+            procedure_system: entry.resource.code?.coding?.[0]?.system || '',
+            status: entry.resource.status || '',
+            performed_datetime: entry.resource.performedDateTime || '',
+            performed_period_start: entry.resource.performedPeriod?.start || '',
+            performed_period_end: entry.resource.performedPeriod?.end || '',
+            category_code: entry.resource.category?.coding?.[0]?.code || '',
+            category_display: entry.resource.category?.coding?.[0]?.display || '',
+            reason_code: entry.resource.reasonCode?.[0]?.coding?.[0]?.code || '',
+            reason_display: entry.resource.reasonCode?.[0]?.coding?.[0]?.display || '',
+            outcome_code: entry.resource.outcome?.coding?.[0]?.code || '',
+            outcome_display: entry.resource.outcome?.coding?.[0]?.display || '',
+            complication_code: entry.resource.complication?.[0]?.coding?.[0]?.code || '',
+            complication_display: entry.resource.complication?.[0]?.coding?.[0]?.display || '',
+            follow_up_code: entry.resource.followUp?.[0]?.coding?.[0]?.code || '',
+            follow_up_display: entry.resource.followUp?.[0]?.coding?.[0]?.display || ''
+          })) : [];
+          setEncounterProcedures(procedures);
+          setEncounterProcNote(procData.note || '');
+        }
+      } catch (err: any) {
+        console.error('Failed to fetch encounter procedures:', err);
+        setEncounterProcNote('Failed to fetch procedures');
+      } finally {
+        setEncounterProcLoading(false);
+      }
+
+      try {
+        // Fetch specimens
+        setEncounterSpecLoading(true);
+        const specParams = new URLSearchParams();
+        specParams.append('patient', `Patient/${selectedPatient.id}`);
+        specParams.append('encounter', `Encounter/${selectedEncounterId}`);
+        if (encounterStart) specParams.append('start', encounterStart);
+        if (encounterEnd) specParams.append('end', encounterEnd);
+
+        const specRes = await fetch(`${API_BASE}/encounter/specimens?${specParams.toString()}`);
+        if (specRes.ok) {
+          const specData = await specRes.json();
+          const specimens = specData.specimens ? specData.specimens.map((entry: any) => ({
+            id: entry.resource.id,
+            patient_id: entry.resource.subject?.reference?.split('/')[1] || '',
+            encounter_id: entry.resource.encounter?.reference?.split('/')[1] || '',
+            specimen_type_code: entry.resource.type?.coding?.[0]?.code || '',
+            specimen_type_display: entry.resource.type?.text || entry.resource.type?.coding?.[0]?.display || '',
+            specimen_type_system: entry.resource.type?.coding?.[0]?.system || '',
+            status: entry.resource.status || '',
+            collected_datetime: entry.resource.collection?.collectedDateTime || '',
+            received_datetime: entry.resource.receivedTime || '',
+            collection_method_code: entry.resource.collection?.method?.coding?.[0]?.code || '',
+            collection_method_display: entry.resource.collection?.method?.coding?.[0]?.display || '',
+            body_site_code: entry.resource.collection?.bodySite?.coding?.[0]?.code || '',
+            body_site_display: entry.resource.collection?.bodySite?.coding?.[0]?.display || '',
+            fasting_status_code: entry.resource.fastingStatus?.coding?.[0]?.code || '',
+            fasting_status_display: entry.resource.fastingStatus?.coding?.[0]?.display || '',
+            container_code: entry.resource.container?.[0]?.type?.coding?.[0]?.code || '',
+            container_display: entry.resource.container?.[0]?.type?.coding?.[0]?.display || '',
+            note: entry.resource.note?.[0]?.text || ''
+          })) : [];
+          setEncounterSpecimens(specimens);
+          setEncounterSpecNote(specData.note || '');
+        }
+      } catch (err: any) {
+        console.error('Failed to fetch encounter specimens:', err);
+        setEncounterSpecNote('Failed to fetch specimens');
+      } finally {
+        setEncounterSpecLoading(false);
+      }
+    };
+
+    fetchEncounterData();
+  }, [selectedPatient, selectedEncounterId, encounters, API_BASE]);
 
   // Helper to map a FHIR Bundle to our patient list and update cursors
   const applyPatientBundle = (bundle: any) => {
@@ -840,7 +1046,6 @@ function App() {
                             <PatientTabs
                               tabs={[
                                 { id: 'conditions', label: 'Conditions' },
-                                { id: 'medications', label: 'Medications' },
                                 { id: 'medication-administrations', label: 'Med Admin' },
                                 { id: 'medication-requests', label: 'Med Requests' },
                                 { id: 'observations', label: 'Observations' },
@@ -864,32 +1069,7 @@ function App() {
                               </ul>
                             )}
 
-                          {activeTab === 'medications' && selectedEncounterId && (
-                              <ul style={{ listStyle: 'none', padding: 0 }}>
-                              {(encounterMedLoading ? [] : encounterMedRequests).map(med => (
-                                  <li key={med.id} style={{ padding: '15px', border: '1px solid #ddd', marginBottom: '8px', borderRadius: '6px' }}>
-                                    <div style={{ marginBottom: '8px' }}>
-                                      <b style={{ fontSize: '16px', color: '#2563eb' }}>{med.medication_display}</b>
-                                      <span style={{ fontSize: '12px', color: '#6b7280', marginLeft: '8px' }}>({med.medication_code})</span>
-                                    </div>
-                                    <div style={{ fontSize: '14px', lineHeight: '1.5' }}>
-                                      <div><strong>Status:</strong> {med.status}</div>
-                                      <div><strong>Intent:</strong> {med.intent}</div>
-                                      <div><strong>Priority:</strong> {med.priority}</div>
-                                      <div><strong>Dosage:</strong> {med.dosage_quantity} {med.dosage_unit}</div>
-                                      <div><strong>Route:</strong> {med.route_display || med.route_code}</div>
-                                      <div><strong>Frequency:</strong> {med.frequency_display || med.frequency_code}</div>
-                                      <div><strong>Authored:</strong> {med.authored_on}</div>
-                                    </div>
-                                  </li>
-                                ))}
-                              {encounterMedLoading && <li>Loading...</li>}
-                              {!encounterMedLoading && encounterMedRequests.length === 0 && <li>None</li>}
-                              {encounterMedNote && !encounterMedLoading && (
-                                <li className="text-xs text-gray-500">{encounterMedNote}</li>
-                              )}
-                              </ul>
-                            )}
+                          {/* Medications tab removed (duplicates Med Requests) */}
 
                           {activeTab === 'medication-administrations' && selectedEncounterId && (
                               <ul style={{ listStyle: 'none', padding: 0 }}>
@@ -906,47 +1086,63 @@ function App() {
                               </ul>
                             )}
 
-                            {activeTab === 'medication-requests' && (
-                              <ul style={{ listStyle: 'none', padding: 0 }}>
-                                {medicationRequests.filter(r => r.encounter_id === selectedEncounterId).map(req => (
-                                  <li key={req.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
-                                    <b>{req.medication_display}</b> • Status: {req.status} • Priority: {req.priority}
-                                  </li>
-                                ))}
-                                {medicationRequests.filter(r => r.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
-                              </ul>
-                            )}
+                          {activeTab === 'medication-requests' && selectedEncounterId && (
+                            <ul style={{ listStyle: 'none', padding: 0 }}>
+                              {(encounterMedLoading ? [] : encounterMedRequests).map(req => (
+                                <li key={req.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
+                                  <b>{req.medication_display}</b> • Status: {req.status} • Priority: {req.priority}
+                                </li>
+                              ))}
+                              {encounterMedLoading && <li>Loading...</li>}
+                              {!encounterMedLoading && encounterMedRequests.length === 0 && <li>None</li>}
+                              {encounterMedNote && !encounterMedLoading && (
+                                <li className="text-xs text-gray-500">{encounterMedNote}</li>
+                              )}
+                            </ul>
+                          )}
 
                             {activeTab === 'observations' && (
                               <ul style={{ listStyle: 'none', padding: 0 }}>
-                                {observations.filter(o => o.encounter_id === selectedEncounterId).slice(0, 50).map(obs => (
+                                {(encounterObsLoading ? [] : encounterObservations).map(obs => (
                                   <li key={obs.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
                                     <b>{obs.code_display}</b> • Value: {obs.value_quantity || obs.value_string || obs.value_display || obs.value_code || 'N/A'} {obs.value_unit}
                                   </li>
                                 ))}
-                                {observations.filter(o => o.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                                {encounterObsLoading && <li>Loading...</li>}
+                                {!encounterObsLoading && encounterObservations.length === 0 && <li>None</li>}
+                                {encounterObsNote && !encounterObsLoading && (
+                                  <li className="text-xs text-gray-500">{encounterObsNote}</li>
+                                )}
                               </ul>
                             )}
 
                             {activeTab === 'procedures' && (
                               <ul style={{ listStyle: 'none', padding: 0 }}>
-                                {procedures.filter(p => p.encounter_id === selectedEncounterId).map(proc => (
+                                {(encounterProcLoading ? [] : encounterProcedures).map(proc => (
                                   <li key={proc.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
                                     <b>{proc.procedure_display}</b> • Status: {proc.status}
                                   </li>
                                 ))}
-                                {procedures.filter(p => p.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                                {encounterProcLoading && <li>Loading...</li>}
+                                {!encounterProcLoading && encounterProcedures.length === 0 && <li>None</li>}
+                                {encounterProcNote && !encounterProcLoading && (
+                                  <li className="text-xs text-gray-500">{encounterProcNote}</li>
+                                )}
                               </ul>
                             )}
 
                             {activeTab === 'specimens' && (
                               <ul style={{ listStyle: 'none', padding: 0 }}>
-                                {specimens.filter(s => s.encounter_id === selectedEncounterId).map(spec => (
+                                {(encounterSpecLoading ? [] : encounterSpecimens).map(spec => (
                                   <li key={spec.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
                                     <b>{spec.specimen_type_display}</b> • Status: {spec.status}
                                   </li>
                                 ))}
-                                {specimens.filter(s => s.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                                {encounterSpecLoading && <li>Loading...</li>}
+                                {!encounterSpecLoading && encounterSpecimens.length === 0 && <li>None</li>}
+                                {encounterSpecNote && !encounterSpecLoading && (
+                                  <li className="text-xs text-gray-500">{encounterSpecNote}</li>
+                                )}
                               </ul>
                             )}
                           </div>
