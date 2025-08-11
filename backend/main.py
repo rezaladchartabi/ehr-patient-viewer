@@ -566,6 +566,55 @@ async def search_patients(q: str, _count: int = 20):
             pass
 
     entries = list(results.values())
+    # Fallback: scan allowlisted patients' meds for substring match when remote indexes don't return hits
+    if not entries:
+        ids_env = os.getenv("ALLOWLIST_IDS", "").strip()
+        if ids_env:
+            ids_list = [i.strip() for i in ids_env.split(',') if i.strip()]
+            ql = q.lower()
+            hit_patient_ids: List[str] = []
+            # scan MedicationRequest and MedicationAdministration per patient
+            for pid in ids_list:
+                try:
+                    # MedicationRequest
+                    req_entries = await _fetch_all_pages("/MedicationRequest", {"patient": f"Patient/{pid}", "_count": 50})
+                    def _req_hit(e: Dict[str, Any]):
+                        res = e.get("resource", {})
+                        cc = ((res.get("medicationCodeableConcept") or {}).get("coding") or [{}])[0]
+                        texts = [
+                            (cc.get("display") or ''),
+                            (cc.get("code") or ''),
+                            ((res.get("medicationCodeableConcept") or {}).get("text") or ''),
+                        ]
+                        return any(ql in (t or '').lower() for t in texts)
+                    if any(_req_hit(e) for e in req_entries):
+                        hit_patient_ids.append(pid)
+                        continue  # enough to add once
+                    # MedicationAdministration
+                    adm_entries = await _fetch_all_pages("/MedicationAdministration", {"patient": f"Patient/{pid}", "_count": 50})
+                    def _adm_hit(e: Dict[str, Any]):
+                        res = e.get("resource", {})
+                        cc = ((res.get("medicationCodeableConcept") or {}).get("coding") or [{}])[0]
+                        texts = [
+                            (cc.get("display") or ''),
+                            (cc.get("code") or ''),
+                            ((res.get("medicationCodeableConcept") or {}).get("text") or ''),
+                        ]
+                        return any(ql in (t or '').lower() for t in texts)
+                    if any(_adm_hit(e) for e in adm_entries):
+                        hit_patient_ids.append(pid)
+                except Exception:
+                    continue
+            if hit_patient_ids:
+                try:
+                    pats = await fetch_from_fhir("/Patient", {"_id": ",".join(sorted(set(hit_patient_ids)))})
+                    for e in pats.get("entry", []) or []:
+                        rid = (e.get("resource") or {}).get("id")
+                        if rid and rid not in results:
+                            results[rid] = e
+                    entries = list(results.values())
+                except Exception:
+                    pass
     return {"resourceType": "Bundle", "type": "searchset", "total": len(entries), "entry": entries}
 
 @app.get("/Condition")
