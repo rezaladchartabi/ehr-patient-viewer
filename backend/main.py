@@ -12,31 +12,73 @@ import json
 from collections import defaultdict
 import os
 import sqlite3
+import pickle
+import hashlib
+from contextlib import asynccontextmanager
 
 # Configuration
 FHIR_BASE_URL = "https://gel-landscapes-impaired-vitamin.trycloudflare.com/fhir"
 CACHE_TTL = 300  # 5 minutes cache
 RATE_LIMIT_REQUESTS = 100  # requests per minute
 RATE_LIMIT_WINDOW = 60  # seconds
+MAX_CONNECTIONS = 20
+CONNECTION_TIMEOUT = 30.0
 
-app = FastAPI(title="EHR FHIR Proxy", version="1.0.0")
-
-# Allow CORS for all origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-app.add_middleware(GZipMiddleware, minimum_size=500)
-
-# Simple in-memory cache
+# Global state
 cache: Dict[str, Dict] = {}
 rate_limit_tracker: Dict[str, List[float]] = defaultdict(list)
+http_client: Optional[httpx.AsyncClient] = None
 
 # Search index (SQLite FTS5)
 SEARCH_DB_PATH = os.path.join(os.path.dirname(__file__), "search_index.sqlite3")
+
+# Performance optimizations
+class OptimizedCache:
+    def __init__(self, max_size: int = 1000):
+        self.max_size = max_size
+        self.cache: Dict[str, Dict] = {}
+        self.access_order: List[str] = []
+    
+    def get(self, key: str) -> Optional[Dict]:
+        if key in self.cache:
+            # Move to end (most recently used)
+            self.access_order.remove(key)
+            self.access_order.append(key)
+            return self.cache[key]
+        return None
+    
+    def set(self, key: str, value: Dict, ttl: int = CACHE_TTL):
+        if len(self.cache) >= self.max_size:
+            # Remove least recently used
+            lru_key = self.access_order.pop(0)
+            del self.cache[lru_key]
+        
+        self.cache[key] = {
+            "data": value,
+            "timestamp": time.time(),
+            "ttl": ttl
+        }
+        self.access_order.append(key)
+    
+    def is_valid(self, key: str) -> bool:
+        if key not in self.cache:
+            return False
+        entry = self.cache[key]
+        return time.time() - entry["timestamp"] < entry["ttl"]
+    
+    def clear_expired(self):
+        now = time.time()
+        expired_keys = [
+            key for key, entry in self.cache.items()
+            if now - entry["timestamp"] >= entry["ttl"]
+        ]
+        for key in expired_keys:
+            del self.cache[key]
+            if key in self.access_order:
+                self.access_order.remove(key)
+
+# Initialize optimized cache
+optimized_cache = OptimizedCache(max_size=2000)
 
 def _search_conn() -> sqlite3.Connection:
     conn = sqlite3.connect(SEARCH_DB_PATH)
@@ -47,6 +89,9 @@ def ensure_search_schema():
     conn = _search_conn()
     cur = conn.cursor()
     cur.execute("PRAGMA journal_mode=WAL;")
+    cur.execute("PRAGMA synchronous=NORMAL;")
+    cur.execute("PRAGMA cache_size=10000;")
+    cur.execute("PRAGMA temp_store=MEMORY;")
     cur.execute(
         """
         CREATE VIRTUAL TABLE IF NOT EXISTS si USING fts5(
@@ -98,87 +143,61 @@ def build_cache_key(method: str, path: str, params_dict: Dict[str, Any]) -> str:
 
 def is_cacheable(path: str) -> bool:
     """Check if the endpoint should be cached"""
-    cacheable_endpoints = [
-        "/Patient",
-        "/Condition", 
-        "/MedicationRequest",
-        "/MedicationAdministration",
-        "/Encounter",
-        "/Observation",
-        "/Procedure",
-        "/Specimen"
-    ]
-    return any(path.startswith(endpoint) for endpoint in cacheable_endpoints)
+    return not path.startswith('/search') and 'cache' not in path
 
-# Reusable HTTP client
-_client: httpx.AsyncClient | None = None
+# Connection pool management
+@asynccontextmanager
+async def get_http_client():
+    global http_client
+    if http_client is None:
+        limits = httpx.Limits(max_connections=MAX_CONNECTIONS, max_keepalive_connections=10)
+        http_client = httpx.AsyncClient(
+            limits=limits,
+            timeout=CONNECTION_TIMEOUT,
+            headers={"User-Agent": "EHR-Proxy/1.0"}
+        )
+    try:
+        yield http_client
+    except Exception:
+        # Reset client on error
+        if http_client:
+            await http_client.aclose()
+            http_client = None
+        raise
+
+async def fetch_from_fhir(path: str, params: Dict = None) -> Dict:
+    """Fetch data from FHIR server with optimized connection pooling"""
+    async with get_http_client() as client:
+        url = f"{FHIR_BASE_URL}{path}"
+        if params:
+            query_string = urlencode(params, doseq=True)
+            url = f"{url}?{query_string}"
+        
+        response = await client.get(url)
+        response.raise_for_status()
+        return response.json()
+
+def _cursor_allowed(cursor_url: str) -> bool:
+    """Validate cursor URL for security"""
+    try:
+        parsed = urlparse(cursor_url)
+        return parsed.netloc.endswith('trycloudflare.com') and parsed.path.startswith('/fhir')
+    except:
+        return False
 
 @app.on_event("startup")
 async def _startup_client():
-    global _client
-    if _client is None:
+    global http_client
+    if http_client is None:
         _client = httpx.AsyncClient(timeout=30.0)
     ensure_search_schema()
 
 @app.on_event("shutdown")
 async def _shutdown_client():
-    global _client
-    if _client is not None:
-        await _client.aclose()
-        _client = None
-
-async def fetch_from_fhir(path: str, params: Dict = None) -> Dict:
-    """Fetch data from FHIR server with shared client"""
-    if _client is None:
-        # fallback safety
-        client = httpx.AsyncClient(timeout=30.0)
-    else:
-        client = _client
-    url = f"{FHIR_BASE_URL}{path}"
-    response = await client.get(url, params=params)
-    if response.status_code != 200:
-        raise HTTPException(
-            status_code=response.status_code,
-            detail=f"FHIR server error: {response.text}"
-        )
-    return response.json()
-
-def _cursor_allowed(cursor_url: str) -> bool:
-    """Ensure the cursor URL points to the configured FHIR host/path to avoid SSRF."""
-    try:
-        target = urlparse(cursor_url)
-        base = urlparse(FHIR_BASE_URL)
-        if not target.netloc:
-            return False
-        # Allow both http/https as seen from server links; require same host and path prefix
-        same_host = target.hostname == base.hostname
-        return bool(same_host and target.path.startswith(base.path.rstrip('/')))
-    except Exception:
-        return False
-
-@app.get("/paginate")
-async def paginate(cursor: str):
-    """Fetch a FHIR page via absolute 'next' link (cursor). Returns raw Bundle.
-
-    The cursor must point to the configured FHIR host; otherwise 400 is returned.
-    """
-    if not _cursor_allowed(cursor):
-        raise HTTPException(status_code=400, detail="Invalid cursor host")
-
-    cache_key = get_cache_key("GET", "/paginate", cursor)
-    if cache_key in cache:
-        cached = cache[cache_key]
-        if time.time() - cached["timestamp"] < CACHE_TTL:
-            return cached["data"]
-
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        response = await client.get(cursor)
-        if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail=f"FHIR server error: {response.text}")
-        data = response.json()
-
-    cache[cache_key] = {"data": data, "timestamp": time.time()}
-    return data
+    global http_client
+    if http_client is not None:
+        await http_client.aclose()
+        http_client = None
 
 async def _fetch_all_pages(path: str, params: Dict[str, Any]) -> List[Dict]:
     """Fetch first page and follow link[next] until exhausted. Returns entry list."""
@@ -189,7 +208,7 @@ async def _fetch_all_pages(path: str, params: Dict[str, Any]) -> List[Dict]:
     next_link = next((l.get("url") for l in links if l.get("relation") == "next"), None)
     # Follow next links using shared client (direct GET)
     if next_link:
-        client = _client or httpx.AsyncClient(timeout=30.0)
+        client = http_client or httpx.AsyncClient(timeout=30.0)
         cursor = next_link
         while cursor:
             resp = await client.get(cursor)
