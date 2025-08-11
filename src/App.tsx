@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import './App.css';
 import { SidebarPatients } from './components/SidebarPatients';
+import SearchBar from './components/SearchBar';
 import { PatientTabs } from './components/PatientTabs';
 import { useTheme } from 'next-themes';
 
@@ -754,7 +755,7 @@ function App() {
       <h1>EHR Patient Viewer</h1>
       {error && <div style={{ color: 'red', padding: '10px', backgroundColor: '#ffebee', borderRadius: '4px', margin: '10px 0' }}>{error}</div>}
       
-      {/* Search removed per request */}
+      <SearchBar apiBase={API_BASE} onPickPatient={selectPatient} />
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '2rem' }}>
         {/* Patient List */}
