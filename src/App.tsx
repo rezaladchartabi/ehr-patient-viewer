@@ -213,11 +213,6 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>('conditions');
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [searchResults, setSearchResults] = useState<Array<{ type: string; id: string; title: string; subtitle: string; patient_id: string }>>([]);
-  const [isSearching, setIsSearching] = useState<boolean>(false);
-  const [searchPatients, setSearchPatients] = useState<Patient[]>([]);
-  const [showSearchOverlay, setShowSearchOverlay] = useState<boolean>(false);
   // Pagination state for Patient list
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [prevStack, setPrevStack] = useState<string[]>([]);
@@ -472,25 +467,7 @@ function App() {
       .finally(() => setLoading(false));
   };
 
-  // --- Search helpers ---
-  const parsePatientBundle = (bundle: any): Patient[] => {
-    return bundle.entry ? bundle.entry.map((entry: any) => ({
-      id: entry.resource.id,
-      family_name: entry.resource.name?.[0]?.family || 'Unknown',
-      gender: entry.resource.gender || 'Unknown',
-      birth_date: entry.resource.birthDate || 'Unknown',
-      identifier: entry.resource.identifier?.[0]?.value || ''
-    })) : [];
-  };
-
-  const isUUID = (s: string) => /[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/.test(s);
-
-  const searchPatientsByQuery = async (q: string): Promise<Patient[]> => {
-    if (q.trim().length === 0) return [];
-    const url = `${API_BASE}/search/patients?q=${encodeURIComponent(q.trim())}`;
-    const bundle = await fetch(url).then(r => r.json());
-    return parsePatientBundle(bundle);
-  };
+  // (Search removed)
 
   // Navigate to a page via backend /paginate
   const loadByCursor = (cursor: string, goingBack: boolean) => {
@@ -777,125 +754,7 @@ function App() {
       <h1>EHR Patient Viewer</h1>
       {error && <div style={{ color: 'red', padding: '10px', backgroundColor: '#ffebee', borderRadius: '4px', margin: '10px 0' }}>{error}</div>}
       
-      {/* Global Search (right-aligned) */}
-      <div className="relative z-50 ml-auto w-full max-w-[25vw]" style={{ marginTop: '10px' }}>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Search patients, conditions, medications, encounters, observations, procedures, specimens..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-              setIsSearching(true);
-              setShowSearchOverlay(true);
-              searchPatientsByQuery(searchQuery)
-                .then(list => {
-                  setSearchResults([]);
-                  setSearchPatients(list);
-                })
-                .finally(() => setIsSearching(false));
-              }
-            }}
-            className="w-full rounded-lg border border-gray-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 shadow-soft focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
-          <button
-            onClick={() => {
-              setIsSearching(true);
-              setShowSearchOverlay(true);
-              searchPatientsByQuery(searchQuery)
-                .then(list => {
-                  setSearchResults([]);
-                  setSearchPatients(list);
-                })
-                .finally(() => setIsSearching(false));
-            }}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
-          >
-            Search
-          </button>
-        </div>
-
-        {showSearchOverlay && (
-          <>
-            <div
-              className="fixed inset-0 bg-black/30 z-40"
-              onClick={() => setShowSearchOverlay(false)}
-            />
-            <div className="absolute left-0 right-0 mt-2 z-50 rounded-xl border border-gray-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-soft max-h-[60vh] overflow-y-auto">
-              <div className="border-b border-gray-200 dark:border-neutral-800 px-4 py-2 text-sm text-gray-500">
-                {isSearching ? 'Searching...' : 'Search Results'}
-              </div>
-              {!isSearching && (
-                <div className="p-2">
-                  {searchPatients.length > 0 && (
-                    <div className="mb-2">
-                      <div className="px-2 py-1 text-xs uppercase tracking-wide text-gray-500">Patients</div>
-                      <ul className="divide-y divide-gray-100 dark:divide-neutral-800">
-                        {searchPatients.map((p) => (
-                          <li
-                            key={p.id}
-                            className="cursor-pointer px-3 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800 rounded-md"
-                            onClick={() => {
-                              setShowSearchOverlay(false);
-                              selectPatient(p);
-                              setActiveTab('conditions');
-                            }}
-                          >
-                            <div className="font-medium">{p.family_name}</div>
-                            <div className="text-xs text-gray-500">{p.gender} • {p.birth_date} • {p.identifier}</div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {searchResults.length > 0 && (
-                    <div>
-                      <div className="px-2 py-1 text-xs uppercase tracking-wide text-gray-500">Items</div>
-                      <ul className="divide-y divide-gray-100 dark:divide-neutral-800">
-                        {searchResults.map((r) => (
-                          <li
-                            key={`${r.type}-${r.id}`}
-                            className="cursor-pointer px-3 py-2 hover:bg-gray-50 dark:hover:bg-neutral-800 rounded-md"
-                            onClick={() => {
-                              const patient = patients.find(p => p.id === r.patient_id || p.id === r.id);
-                              if (patient) {
-                                setShowSearchOverlay(false);
-                                selectPatient(patient);
-                                const tabMap: Record<string, string> = {
-                                  'patient': 'conditions',
-                                  'condition': 'conditions',
-                                  'medication': 'medications',
-                                  'encounter': 'encounters',
-                                  'medication-administration': 'medication-administrations',
-                                  'medication-request': 'medication-requests',
-                                  'observation': 'observations',
-                                  'procedure': 'procedures',
-                                  'specimen': 'specimens',
-                                };
-                                const t = tabMap[r.type] || 'conditions';
-                                setActiveTab(t);
-                              }
-                            }}
-                          >
-                            <div className="font-medium">{r.title}</div>
-                            <div className="text-xs text-gray-500">{r.type} • {r.subtitle}</div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {searchPatients.length === 0 && searchResults.length === 0 && (
-                    <div className="px-3 py-4 text-sm text-gray-500">No results</div>
-                  )}
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+      {/* Search removed per request */}
 
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '2rem' }}>
         {/* Patient List */}
