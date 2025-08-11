@@ -174,6 +174,56 @@ async def get_patients(
     
     return data
 
+@app.get("/Patient/by-ids")
+async def get_patients_by_ids(ids: str):
+    """Return a Bundle containing Patient resources for the given comma-separated IDs.
+
+    Uses FHIR search parameter _id with comma-separated values in batches, merges entries,
+    and returns as a single Bundle. Results are cached by the full ids list.
+    """
+    if not ids:
+        return {"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []}
+
+    # Normalize and cache
+    id_list = [i.strip() for i in ids.split(',') if i.strip()]
+    if not id_list:
+        return {"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []}
+
+    cache_key = get_cache_key("GET", "/Patient/by-ids", ",".join(sorted(id_list)))
+    if cache_key in cache:
+        cached = cache[cache_key]
+        if time.time() - cached["timestamp"] < CACHE_TTL:
+            return cached["data"]
+
+    # Batch requests to avoid very long URLs; 20 per batch
+    batch_size = 20
+    entries: List[Dict] = []
+    seen_ids = set()
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for i in range(0, len(id_list), batch_size):
+            batch = id_list[i:i+batch_size]
+            params = {"_id": ",".join(batch), "_count": len(batch)}
+            url = f"{FHIR_BASE_URL}/Patient"
+            resp = await client.get(url, params=params)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=resp.status_code, detail=f"FHIR server error: {resp.text}")
+            bundle = resp.json()
+            for e in (bundle.get("entry") or []):
+                rid = e.get("resource", {}).get("id")
+                if rid and rid not in seen_ids:
+                    seen_ids.add(rid)
+                    entries.append(e)
+
+    result = {
+        "resourceType": "Bundle",
+        "type": "searchset",
+        "total": len(entries),
+        "entry": entries,
+    }
+    cache[cache_key] = {"data": result, "timestamp": time.time()}
+    return result
+
 @app.get("/Condition")
 async def get_conditions(
     patient: Optional[str] = None,
