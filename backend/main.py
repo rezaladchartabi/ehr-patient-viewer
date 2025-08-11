@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 import httpx
 import asyncio
 from typing import Dict, List, Optional
+from urllib.parse import urlparse
 import time
 import json
 from collections import defaultdict
@@ -83,6 +84,43 @@ async def fetch_from_fhir(path: str, params: Dict = None) -> Dict:
             )
         
         return response.json()
+
+def _cursor_allowed(cursor_url: str) -> bool:
+    """Ensure the cursor URL points to the configured FHIR host/path to avoid SSRF."""
+    try:
+        target = urlparse(cursor_url)
+        base = urlparse(FHIR_BASE_URL)
+        if not target.netloc:
+            return False
+        # Allow both http/https as seen from server links; require same host and path prefix
+        same_host = target.hostname == base.hostname
+        return bool(same_host and target.path.startswith(base.path.rstrip('/')))
+    except Exception:
+        return False
+
+@app.get("/paginate")
+async def paginate(cursor: str):
+    """Fetch a FHIR page via absolute 'next' link (cursor). Returns raw Bundle.
+
+    The cursor must point to the configured FHIR host; otherwise 400 is returned.
+    """
+    if not _cursor_allowed(cursor):
+        raise HTTPException(status_code=400, detail="Invalid cursor host")
+
+    cache_key = get_cache_key("GET", "/paginate", cursor)
+    if cache_key in cache:
+        cached = cache[cache_key]
+        if time.time() - cached["timestamp"] < CACHE_TTL:
+            return cached["data"]
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(cursor)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=f"FHIR server error: {response.text}")
+        data = response.json()
+
+    cache[cache_key] = {"data": data, "timestamp": time.time()}
+    return data
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):

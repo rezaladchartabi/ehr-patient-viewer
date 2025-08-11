@@ -218,6 +218,10 @@ function App() {
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [searchPatients, setSearchPatients] = useState<Patient[]>([]);
   const [showSearchOverlay, setShowSearchOverlay] = useState<boolean>(false);
+  // Pagination state for Patient list
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [prevStack, setPrevStack] = useState<string[]>([]);
+  const [currentSelfCursor, setCurrentSelfCursor] = useState<string | null>(null);
 
   type ServiceLine = 'ICU' | 'ED' | 'Default';
 
@@ -247,37 +251,84 @@ function App() {
     setSelectedEncounterId(first ? first.id : null);
   }, [encounters, sortedEncounters]);
 
-  useEffect(() => {
+  // Helper to map a FHIR Bundle to our patient list and update cursors
+  const applyPatientBundle = (bundle: any) => {
+    const mapped = bundle.entry ? bundle.entry.map((entry: any) => ({
+      id: entry.resource.id,
+      family_name: entry.resource.name?.[0]?.family || 'Unknown',
+      gender: entry.resource.gender || 'Unknown',
+      birth_date: entry.resource.birthDate || 'Unknown',
+      race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.valueCodeableConcept?.text,
+      ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')?.valueCodeableConcept?.text,
+      birth_sex: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex')?.valueCode,
+      identifier: entry.resource.identifier?.[0]?.value,
+      marital_status: entry.resource.maritalStatus?.text,
+      deceased_date: entry.resource.deceasedDateTime,
+      managing_organization: entry.resource.managingOrganization?.reference
+    })) : [];
+    setPatients(mapped);
+
+    const links = Array.isArray(bundle.link) ? bundle.link : [];
+    const next = links.find((l: any) => l.relation === 'next')?.url || null;
+    const self = links.find((l: any) => l.relation === 'self')?.url || null;
+    setNextCursor(next);
+    setCurrentSelfCursor(self || null);
+
+    if (mapped.length > 0) {
+      selectPatient(mapped[0]);
+    } else {
+      setSelectedPatient(null);
+      setPatientSummary(null);
+    }
+  };
+
+  // Load first page
+  const loadFirstPatientsPage = () => {
     setLoading(true);
-    console.log('Fetching patients from:', API_BASE);
-    fetch(`${API_BASE}/Patient?_count=50`)
+    setError(null);
+    console.log('Fetching patients (page 1) from:', API_BASE);
+    fetch(`${API_BASE}/Patient?_count=25`)
       .then(res => res.json())
-      .then(data => {
-        // Extract patients from FHIR Bundle
-        const patients = data.entry ? data.entry.map((entry: any) => ({
-          id: entry.resource.id,
-          family_name: entry.resource.name?.[0]?.family || 'Unknown',
-          gender: entry.resource.gender || 'Unknown',
-          birth_date: entry.resource.birthDate || 'Unknown',
-          race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.valueCodeableConcept?.text,
-          ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')?.valueCodeableConcept?.text,
-          birth_sex: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex')?.valueCode,
-          identifier: entry.resource.identifier?.[0]?.value,
-          marital_status: entry.resource.maritalStatus?.text,
-          deceased_date: entry.resource.deceasedDateTime,
-          managing_organization: entry.resource.managingOrganization?.reference
-        })) : [];
-        
-        setPatients(patients);
-        setLoading(false);
-        if (patients.length > 0) {
-          selectPatient(patients[0]);
-        }
+      .then(bundle => {
+        setPrevStack([]);
+        applyPatientBundle(bundle);
       })
-      .catch(err => {
-        setError('Failed to fetch patients');
-        setLoading(false);
-      });
+      .catch(() => setError('Failed to fetch patients'))
+      .finally(() => setLoading(false));
+  };
+
+  // Navigate to a page via backend /paginate
+  const loadByCursor = (cursor: string, goingBack: boolean) => {
+    setLoading(true);
+    setError(null);
+    fetch(`${API_BASE}/paginate?cursor=${encodeURIComponent(cursor)}`)
+      .then(res => res.json())
+      .then(bundle => {
+        applyPatientBundle(bundle);
+        // If we went back, prevStack already popped by caller
+      })
+      .catch(() => setError('Failed to paginate patients'))
+      .finally(() => setLoading(false));
+  };
+
+  // Handlers for Next/Prev
+  const handleNextPage = () => {
+    if (!nextCursor) return;
+    if (currentSelfCursor) {
+      setPrevStack(prev => [...prev, currentSelfCursor]);
+    }
+    loadByCursor(nextCursor, false);
+  };
+
+  const handlePrevPage = () => {
+    if (prevStack.length === 0) return;
+    const prev = prevStack[prevStack.length - 1];
+    setPrevStack(stack => stack.slice(0, stack.length - 1));
+    loadByCursor(prev, true);
+  };
+
+  useEffect(() => {
+    loadFirstPatientsPage();
   }, []);
 
   const selectPatient = (patient: Patient) => {
@@ -687,6 +738,23 @@ function App() {
               </div>
             )}
           />
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              onClick={handlePrevPage}
+              disabled={prevStack.length === 0}
+              className={`px-3 py-1 rounded border ${prevStack.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 dark:hover:bg-neutral-800'}`}
+            >
+              Prev
+            </button>
+            <button
+              onClick={handleNextPage}
+              disabled={!nextCursor}
+              className={`px-3 py-1 rounded border ${!nextCursor ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-50 dark:hover:bg-neutral-800'}`}
+            >
+              Next
+            </button>
+            <div className="text-xs text-gray-500 ml-2">Page size: 25</div>
+          </div>
         </div>
 
         {/* Patient Details */}
