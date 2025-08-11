@@ -150,6 +150,130 @@ async def paginate(cursor: str):
     cache[cache_key] = {"data": data, "timestamp": time.time()}
     return data
 
+async def _fetch_all_pages(path: str, params: Dict[str, Any]) -> List[Dict]:
+    """Fetch first page and follow link[next] until exhausted. Returns entry list."""
+    # First page
+    first = await fetch_from_fhir(path, params)
+    entries: List[Dict] = list(first.get("entry") or [])
+    links = first.get("link") or []
+    next_link = next((l.get("url") for l in links if l.get("relation") == "next"), None)
+    # Follow next links using shared client (direct GET)
+    if next_link:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            cursor = next_link
+            while cursor:
+                resp = await client.get(cursor)
+                if resp.status_code != 200:
+                    break
+                page = resp.json()
+                entries.extend(page.get("entry") or [])
+                links = page.get("link") or []
+                cursor = next((l.get("url") for l in links if l.get("relation") == "next"), None)
+    return entries
+
+def _map_med_req(res: Dict[str, Any]) -> Dict[str, Any]:
+    c = (res.get("medicationCodeableConcept") or {}).get("coding") or [{}]
+    coding = c[0]
+    enc_ref = ((res.get("encounter") or {}).get("reference") or '')
+    return {
+        "id": res.get("id"),
+        "patient_id": ((res.get("subject") or {}).get("reference") or '').split('/')[-1],
+        "encounter_id": enc_ref.split('/')[-1] if enc_ref else '',
+        "medication_code": coding.get("code", ''),
+        "medication_display": coding.get("display") or coding.get("code") or 'Unknown Medication',
+        "medication_system": coding.get("system", ''),
+        "status": res.get("status", ''),
+        "intent": res.get("intent", ''),
+        "priority": res.get("priority", ''),
+        "authored_on": res.get("authoredOn", ''),
+    }
+
+def _map_med_admin(res: Dict[str, Any]) -> Dict[str, Any]:
+    c = (res.get("medicationCodeableConcept") or {}).get("coding") or [{}]
+    coding = c[0]
+    ctx_ref = ((res.get("context") or {}).get("reference") or '')
+    return {
+        "id": res.get("id"),
+        "patient_id": ((res.get("subject") or {}).get("reference") or '').split('/')[-1],
+        "encounter_id": ctx_ref.split('/')[-1] if ctx_ref else '',
+        "medication_code": coding.get("code", ''),
+        "medication_display": coding.get("display") or coding.get("code") or 'Unknown Medication',
+        "medication_system": coding.get("system", ''),
+        "status": res.get("status", ''),
+        "effective_start": res.get("effectiveDateTime") or ((res.get("effectivePeriod") or {}).get("start")) or '',
+        "effective_end": ((res.get("effectivePeriod") or {}).get("end")) or '',
+    }
+
+def _within(ts: str, start: Optional[str], end: Optional[str]) -> bool:
+    if not ts:
+        return False
+    try:
+        t = time.mktime(time.strptime(ts[:19], "%Y-%m-%dT%H:%M:%S"))
+        s = time.mktime(time.strptime(start[:19], "%Y-%m-%dT%H:%M:%S")) if start else None
+        e = time.mktime(time.strptime(end[:19], "%Y-%m-%dT%H:%M:%S")) if end else None
+        if s and t < s:
+            return False
+        if e and t > e:
+            return False
+        return True
+    except Exception:
+        return False
+
+@app.get("/encounter/medications")
+async def encounter_medications(patient: str, encounter: str, start: Optional[str] = None, end: Optional[str] = None):
+    """Return both MedicationRequest and MedicationAdministration for an encounter.
+
+    Follows pagination; if encounter search returns empty, fall back to patient
+    scope and filter by encounter id or time window.
+    """
+    # Requests
+    req_params = {"patient": patient, "encounter": encounter, "_count": 50}
+    req_entries = await _fetch_all_pages("/MedicationRequest", req_params)
+    if not req_entries:
+        all_req = await _fetch_all_pages("/MedicationRequest", {"patient": patient, "_count": 50})
+        req = [_map_med_req(e.get("resource", {})) for e in all_req]
+        req = [r for r in req if r.get("encounter_id") == encounter.split('/')[-1] or _within(r.get("authored_on", ''), start, end)]
+        req_note = "inferred-by-time-window"
+    else:
+        req = [_map_med_req(e.get("resource", {})) for e in req_entries]
+        req_note = None
+
+    # Administrations
+    adm_params = {"patient": patient, "encounter": encounter, "_count": 50}
+    adm_entries = await _fetch_all_pages("/MedicationAdministration", adm_params)
+    if not adm_entries:
+        all_adm = await _fetch_all_pages("/MedicationAdministration", {"patient": patient, "_count": 50})
+        adm = [_map_med_admin(e.get("resource", {})) for e in all_adm]
+        adm = [a for a in adm if a.get("encounter_id") == encounter.split('/')[-1] or _within(a.get("effective_start", ''), start, end)]
+        adm_note = "inferred-by-time-window"
+    else:
+        adm = [_map_med_admin(e.get("resource", {})) for e in adm_entries]
+        adm_note = None
+
+    note = None
+    if req_note or adm_note:
+        note = "results include items inferred by time window"
+    return {"requests": req, "administrations": adm, "note": note}
+
+@app.get("/patients/summary")
+async def patients_summary(patient: str):
+    """Return counts per resource for a patient using _summary=count."""
+    async def count(path: str) -> int:
+        data = await fetch_from_fhir(path, {"patient": patient, "_summary": "count"})
+        return int(data.get("total") or 0)
+    return {
+        "patient": patient,
+        "summary": {
+            "conditions": await count("/Condition"),
+            "medications": await count("/MedicationRequest"),
+            "encounters": await count("/Encounter"),
+            "medication_administrations": await count("/MedicationAdministration"),
+            "observations": await count("/Observation"),
+            "procedures": await count("/Procedure"),
+            "specimens": await count("/Specimen"),
+        }
+    }
+
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
     """Rate limiting middleware"""
