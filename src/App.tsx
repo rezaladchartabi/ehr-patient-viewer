@@ -223,6 +223,151 @@ function App() {
   const [prevStack, setPrevStack] = useState<string[]>([]);
   const [currentSelfCursor, setCurrentSelfCursor] = useState<string | null>(null);
 
+  // Encounter-scoped medication caches and state
+  const [encounterMedReqCache, setEncounterMedReqCache] = useState<Record<string, MedicationRequest[]>>({});
+  const [encounterMedAdminCache, setEncounterMedAdminCache] = useState<Record<string, MedicationAdministration[]>>({});
+  const [encounterMedRequests, setEncounterMedRequests] = useState<MedicationRequest[]>([]);
+  const [encounterMedAdministrations, setEncounterMedAdministrations] = useState<MedicationAdministration[]>([]);
+  const [encounterMedLoading, setEncounterMedLoading] = useState<boolean>(false);
+  const [encounterAdminLoading, setEncounterAdminLoading] = useState<boolean>(false);
+  const [encounterMedNote, setEncounterMedNote] = useState<string | null>(null);
+  const [encounterAdminNote, setEncounterAdminNote] = useState<string | null>(null);
+
+  const getEncounterCacheKey = (patientId: string, encounterId: string, kind: 'req'|'admin') => `${patientId}|${encounterId}|${kind}`;
+
+  // Helpers to map FHIR Medication resources consistently
+  const mapMedicationRequest = (res: any): MedicationRequest => ({
+    id: res.id,
+    patient_id: res.subject?.reference?.split('/')[1] || '',
+    encounter_id: res.encounter?.reference?.split('/')[1] || '',
+    medication_code: res.medicationCodeableConcept?.coding?.[0]?.code || '',
+    medication_display: res.medicationCodeableConcept?.coding?.[0]?.display || res.medicationCodeableConcept?.coding?.[0]?.code || 'Unknown Medication',
+    medication_system: res.medicationCodeableConcept?.coding?.[0]?.system || '',
+    status: res.status || '',
+    intent: res.intent || '',
+    priority: res.priority || '',
+    authored_on: res.authoredOn || '',
+    dosage_quantity: res.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.value || 0,
+    dosage_unit: res.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.unit || '',
+    frequency_code: res.dosageInstruction?.[0]?.timing?.repeat?.frequency || '',
+    frequency_display: res.dosageInstruction?.[0]?.timing?.code?.text || '',
+    route_code: res.dosageInstruction?.[0]?.route?.coding?.[0]?.code || '',
+    route_display: res.dosageInstruction?.[0]?.route?.coding?.[0]?.display || '',
+    reason_code: res.reasonCode?.[0]?.coding?.[0]?.code || '',
+    reason_display: res.reasonCode?.[0]?.coding?.[0]?.display || ''
+  });
+
+  const mapMedicationAdministration = (res: any): MedicationAdministration => ({
+    id: res.id,
+    patient_id: res.subject?.reference?.split('/')[1] || '',
+    encounter_id: res.context?.reference?.split('/')[1] || '',
+    medication_code: res.medicationCodeableConcept?.coding?.[0]?.code || '',
+    medication_display: res.medicationCodeableConcept?.coding?.[0]?.display || res.medicationCodeableConcept?.coding?.[0]?.code || 'Unknown Medication',
+    medication_system: res.medicationCodeableConcept?.coding?.[0]?.system || '',
+    status: res.status || '',
+    effective_start: res.effectiveDateTime || res.effectivePeriod?.start || '',
+    effective_end: res.effectivePeriod?.end || '',
+    dosage_quantity: res.dosage?.dose?.value || 0,
+    dosage_unit: res.dosage?.dose?.unit || '',
+    route_code: res.dosage?.route?.coding?.[0]?.code || '',
+    route_display: res.dosage?.route?.coding?.[0]?.display || '',
+    site_code: res.dosage?.site?.coding?.[0]?.code || '',
+    site_display: res.dosage?.site?.coding?.[0]?.display || '',
+    method_code: res.dosage?.method?.coding?.[0]?.code || '',
+    method_display: res.dosage?.method?.coding?.[0]?.display || '',
+    reason_code: res.reasonCode?.[0]?.coding?.[0]?.code || '',
+    reason_display: res.reasonCode?.[0]?.coding?.[0]?.display || ''
+  });
+
+  // Generic pagination follower using backend /paginate for link[next]
+  const fetchAllPages = async (firstUrl: string) => {
+    const all: any[] = [];
+    let url: string | null = firstUrl;
+    // minimal typing for FHIR Bundle shape
+    type BundleLink = { relation: string; url: string };
+    type Bundle = { entry?: any[]; link?: BundleLink[] };
+    while (url) {
+      const page: Bundle = await fetch(url).then(r => r.json());
+      if (page.entry) all.push(...page.entry);
+      const nextLink = (page.link || []).find((l: BundleLink) => l.relation === 'next');
+      url = nextLink ? `${API_BASE}/paginate?cursor=${encodeURIComponent(nextLink.url)}` : null;
+    }
+    return all;
+  };
+
+  const isWithinWindow = (ts: string, start?: string, end?: string) => {
+    if (!ts) return false;
+    const t = Date.parse(ts);
+    const s = start ? Date.parse(start) : undefined;
+    const e = end ? Date.parse(end) : undefined;
+    if (Number.isNaN(t)) return false;
+    if (s && t < s) return false;
+    if (e && t > e) return false;
+    return true;
+  };
+
+  const loadEncounterMedications = async (patientId: string, encId: string, encStart?: string, encEnd?: string) => {
+    const cacheKey = getEncounterCacheKey(patientId, encId, 'req');
+    if (encounterMedReqCache[cacheKey]) {
+      setEncounterMedRequests(encounterMedReqCache[cacheKey]);
+    } else {
+      setEncounterMedLoading(true);
+      setEncounterMedNote(null);
+      try {
+        // Count first
+        const countUrl = `${API_BASE}/MedicationRequest?patient=Patient/${patientId}&encounter=Encounter/${encId}&_summary=count`;
+        const count = await fetch(countUrl).then(r => r.json()).then(j => j.total || 0);
+        let mapped: MedicationRequest[] = [];
+        if (count > 0) {
+          const first = `${API_BASE}/MedicationRequest?patient=Patient/${patientId}&encounter=Encounter/${encId}&_count=50`;
+          const entries = await fetchAllPages(first);
+          mapped = entries.map((e: any) => mapMedicationRequest(e.resource));
+        } else {
+          // Fallback: fetch patient meds and include those authored within encounter period
+          const first = `${API_BASE}/MedicationRequest?patient=Patient/${patientId}&_count=50`;
+          const entries = await fetchAllPages(first);
+          const all = entries.map((e: any) => mapMedicationRequest(e.resource));
+          mapped = all.filter(m => m.encounter_id === encId || isWithinWindow(m.authored_on, encStart, encEnd));
+          if (mapped.length > 0) setEncounterMedNote('Including orders inferred by time window (no explicit encounter link)');
+        }
+        setEncounterMedRequests(mapped);
+        setEncounterMedReqCache(prev => ({ ...prev, [cacheKey]: mapped }));
+      } finally {
+        setEncounterMedLoading(false);
+      }
+    }
+  };
+
+  const loadEncounterAdministrations = async (patientId: string, encId: string, encStart?: string, encEnd?: string) => {
+    const cacheKey = getEncounterCacheKey(patientId, encId, 'admin');
+    if (encounterMedAdminCache[cacheKey]) {
+      setEncounterMedAdministrations(encounterMedAdminCache[cacheKey]);
+    } else {
+      setEncounterAdminLoading(true);
+      setEncounterAdminNote(null);
+      try {
+        const countUrl = `${API_BASE}/MedicationAdministration?patient=Patient/${patientId}&encounter=Encounter/${encId}&_summary=count`;
+        const count = await fetch(countUrl).then(r => r.json()).then(j => j.total || 0);
+        let mapped: MedicationAdministration[] = [];
+        if (count > 0) {
+          const first = `${API_BASE}/MedicationAdministration?patient=Patient/${patientId}&encounter=Encounter/${encId}&_count=50`;
+          const entries = await fetchAllPages(first);
+          mapped = entries.map((e: any) => mapMedicationAdministration(e.resource));
+        } else {
+          const first = `${API_BASE}/MedicationAdministration?patient=Patient/${patientId}&_count=50`;
+          const entries = await fetchAllPages(first);
+          const all = entries.map((e: any) => mapMedicationAdministration(e.resource));
+          mapped = all.filter(a => a.encounter_id === encId || isWithinWindow(a.effective_start, encStart, encEnd));
+          if (mapped.length > 0) setEncounterAdminNote('Including administrations inferred by time window (no explicit encounter link)');
+        }
+        setEncounterMedAdministrations(mapped);
+        setEncounterMedAdminCache(prev => ({ ...prev, [cacheKey]: mapped }));
+      } finally {
+        setEncounterAdminLoading(false);
+      }
+    }
+  };
+
   type ServiceLine = 'ICU' | 'ED' | 'Default';
 
   const getServiceLineFromEncounter = (enc: Encounter): ServiceLine => {
@@ -250,6 +395,16 @@ function App() {
     const first = sortedEncounters[0];
     setSelectedEncounterId(first ? first.id : null);
   }, [encounters, sortedEncounters]);
+
+  // When selected encounter changes, load encounter-scoped meds (with pagination and fallback)
+  useEffect(() => {
+    if (!selectedPatient || !selectedEncounterId) return;
+    const enc = encounters.find(e => e.id === selectedEncounterId);
+    const start = enc?.start_date;
+    const end = enc?.end_date;
+    loadEncounterMedications(selectedPatient.id, selectedEncounterId, start, end);
+    loadEncounterAdministrations(selectedPatient.id, selectedEncounterId, start, end);
+  }, [selectedEncounterId]);
 
   // Helper to map a FHIR Bundle to our patient list and update cursors
   const applyPatientBundle = (bundle: any) => {
@@ -852,9 +1007,9 @@ function App() {
                               </ul>
                             )}
 
-                            {activeTab === 'medications' && (
+                          {activeTab === 'medications' && selectedEncounterId && (
                               <ul style={{ listStyle: 'none', padding: 0 }}>
-                                {medicationRequests.filter(m => m.encounter_id === selectedEncounterId).map(med => (
+                              {(encounterMedLoading ? [] : encounterMedRequests).map(med => (
                                   <li key={med.id} style={{ padding: '15px', border: '1px solid #ddd', marginBottom: '8px', borderRadius: '6px' }}>
                                     <div style={{ marginBottom: '8px' }}>
                                       <b style={{ fontSize: '16px', color: '#2563eb' }}>{med.medication_display}</b>
@@ -871,18 +1026,26 @@ function App() {
                                     </div>
                                   </li>
                                 ))}
-                                {medicationRequests.filter(m => m.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                              {encounterMedLoading && <li>Loading...</li>}
+                              {!encounterMedLoading && encounterMedRequests.length === 0 && <li>None</li>}
+                              {encounterMedNote && !encounterMedLoading && (
+                                <li className="text-xs text-gray-500">{encounterMedNote}</li>
+                              )}
                               </ul>
                             )}
 
-                            {activeTab === 'medication-administrations' && (
+                          {activeTab === 'medication-administrations' && selectedEncounterId && (
                               <ul style={{ listStyle: 'none', padding: 0 }}>
-                                {medicationAdministrations.filter(a => a.encounter_id === selectedEncounterId).slice(0, 50).map(admin => (
+                              {(encounterAdminLoading ? [] : encounterMedAdministrations).slice(0, 100).map(admin => (
                                   <li key={admin.id} style={{ padding: '10px', border: '1px solid #ddd', marginBottom: '5px', borderRadius: '4px' }}>
                                     <b>{admin.medication_display}</b> • Status: {admin.status} • Dosage: {admin.dosage_quantity} {admin.dosage_unit}
                                   </li>
                                 ))}
-                                {medicationAdministrations.filter(a => a.encounter_id === selectedEncounterId).length === 0 && <li>None</li>}
+                              {encounterAdminLoading && <li>Loading...</li>}
+                              {!encounterAdminLoading && encounterMedAdministrations.length === 0 && <li>None</li>}
+                              {encounterAdminNote && !encounterAdminLoading && (
+                                <li className="text-xs text-gray-500">{encounterAdminNote}</li>
+                              )}
                               </ul>
                             )}
 
