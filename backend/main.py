@@ -33,7 +33,7 @@ http_client: Optional[httpx.AsyncClient] = None
 
 # Local database and sync service
 local_db = LocalDatabase("local_ehr.db")
-sync_service = SyncService(FHIR_BASE_URL, local_db)
+sync_service = SyncService(FHIR_BASE_URL, local_db, fetch_from_fhir)
 
 # Search index (SQLite FTS5)
 SEARCH_DB_PATH = os.path.join(os.path.dirname(__file__), "search_index.sqlite3")

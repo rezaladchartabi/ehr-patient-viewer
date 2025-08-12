@@ -9,9 +9,10 @@ from local_db import LocalDatabase
 logger = logging.getLogger(__name__)
 
 class SyncService:
-    def __init__(self, fhir_base_url: str, local_db: LocalDatabase):
+    def __init__(self, fhir_base_url: str, local_db: LocalDatabase, fetch_from_fhir_func=None):
         self.fhir_base_url = fhir_base_url
         self.local_db = local_db
+        self.fetch_from_fhir = fetch_from_fhir_func
         self.sync_interval = 300  # 5 minutes
         self.max_retries = 3
         self.retry_delay = 5  # seconds
@@ -101,9 +102,24 @@ class SyncService:
         for attempt in range(self.max_retries):
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
+                    logger.info(f"Fetching {resource_type} from {url} with params: {params}")
                     response = await client.get(url, params=params)
                     response.raise_for_status()
-                    return response.json()
+                    data = response.json()
+                    
+                    # Log response info
+                    if 'entry' in data:
+                        logger.info(f"Received {len(data['entry'])} entries for {resource_type}")
+                    else:
+                        logger.warning(f"No 'entry' field in response for {resource_type}: {data}")
+                    
+                    return data
+            except httpx.HTTPStatusError as e:
+                logger.warning(f"HTTP error for {resource_type} (attempt {attempt + 1}): {e.response.status_code} - {e.response.text}")
+                if attempt < self.max_retries - 1:
+                    await asyncio.sleep(self.retry_delay)
+                else:
+                    raise e
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1} failed for {resource_type}: {e}")
                 if attempt < self.max_retries - 1:
@@ -217,24 +233,49 @@ class SyncService:
         
         for patient_id in patient_ids:
             try:
-                # Sync patient data
-                patient_data = await self._fetch_fhir_resource('Patient', {'_id': patient_id})
-                if patient_data and 'entry':
+                # Use the fetch_from_fhir function if available, otherwise fall back to HTTP
+                if self.fetch_from_fhir:
+                    patient_data = await self.fetch_from_fhir("/Patient", {'_id': patient_id})
+                else:
+                    # Fallback to direct HTTP call
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        url = f"{self.fhir_base_url}/Patient?_id={patient_id}"
+                        response = await client.get(url)
+                        response.raise_for_status()
+                        patient_data = response.json()
+                
+                if patient_data and 'entry' and len(patient_data['entry']) > 0:
                     patient_resource = patient_data['entry'][0]['resource']
                     processed_patient = self._process_patient(patient_resource)
                     self.local_db.upsert_patient(processed_patient)
+                else:
+                    results[patient_id] = {'status': 'error', 'error': 'Patient not found in FHIR server'}
+                    continue
                 
                 # Sync related resources for this patient
                 related_resources = ['AllergyIntolerance', 'Condition', 'Encounter']
                 for resource_type in related_resources:
-                    resource_data = await self._fetch_fhir_resource(resource_type, {'patient': f'Patient/{patient_id}'})
-                    if resource_data and 'entry':
-                        for entry in resource_data['entry']:
-                            processed_resource = self._process_resource(resource_type, entry['resource'])
-                            if processed_resource:
-                                if resource_type == 'AllergyIntolerance':
-                                    self.local_db.upsert_allergy(processed_resource)
-                                # Add other resource types as needed
+                    try:
+                        if self.fetch_from_fhir:
+                            resource_data = await self.fetch_from_fhir(f"/{resource_type}", {'patient': f'Patient/{patient_id}'})
+                        else:
+                            # Fallback to direct HTTP call
+                            async with httpx.AsyncClient(timeout=30.0) as client:
+                                url = f"{self.fhir_base_url}/{resource_type}?patient=Patient/{patient_id}&_count=100"
+                                response = await client.get(url)
+                                response.raise_for_status()
+                                resource_data = response.json()
+                        
+                        if resource_data and 'entry':
+                            for entry in resource_data['entry']:
+                                processed_resource = self._process_resource(resource_type, entry['resource'])
+                                if processed_resource:
+                                    if resource_type == 'AllergyIntolerance':
+                                        self.local_db.upsert_allergy(processed_resource)
+                                    # Add other resource types as needed
+                    except Exception as resource_error:
+                        # Log but don't fail the entire sync for resource errors
+                        logger.warning(f"Failed to sync {resource_type} for patient {patient_id}: {resource_error}")
                 
                 results[patient_id] = {'status': 'success'}
                 
