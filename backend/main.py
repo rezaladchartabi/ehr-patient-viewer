@@ -1372,6 +1372,74 @@ async def get_patient_by_id(patient_id: str):
         logger.error(f"Failed to fetch patient {patient_id}: {e}")
         return None
 
+@app.get("/debug/sync-test/{patient_id}")
+async def debug_sync_test(patient_id: str):
+    """Debug endpoint to test sync functionality"""
+    try:
+        # Test 1: Fetch patient data
+        patient_response = await get_patient_by_id(patient_id)
+        
+        if not patient_response:
+            return {"error": "Failed to fetch patient data"}
+        
+        if 'entry' not in patient_response:
+            return {"error": "No 'entry' field in response", "response": patient_response}
+        
+        if len(patient_response['entry']) == 0:
+            return {"error": "No entries in response", "response": patient_response}
+        
+        patient_resource = patient_response['entry'][0]['resource']
+        
+        # Test 2: Process patient data
+        processed_patient = {
+            'id': patient_resource.get('id'),
+            'family_name': patient_resource.get('name', [{}])[0].get('family') if patient_resource.get('name') else None,
+            'gender': patient_resource.get('gender'),
+            'birth_date': patient_resource.get('birthDate'),
+            'race': None,
+            'ethnicity': None,
+            'birth_sex': None,
+            'identifier': patient_resource.get('identifier', [{}])[0].get('value') if patient_resource.get('identifier') else None,
+            'marital_status': patient_resource.get('maritalStatus', {}).get('coding', [{}])[0].get('code') if patient_resource.get('maritalStatus') else None,
+            'deceased_date': patient_resource.get('deceasedDateTime'),
+            'managing_organization': patient_resource.get('managingOrganization', {}).get('reference') if patient_resource.get('managingOrganization') else None,
+            'last_updated': patient_resource.get('meta', {}).get('lastUpdated'),
+            'version_id': patient_resource.get('meta', {}).get('versionId')
+        }
+        
+        # Extract extensions
+        if patient_resource.get('extension'):
+            for ext in patient_resource['extension']:
+                if 'us-core-race' in ext.get('url', ''):
+                    for sub_ext in ext.get('extension', []):
+                        if sub_ext.get('url') == 'text':
+                            processed_patient['race'] = sub_ext.get('valueString')
+                elif 'us-core-ethnicity' in ext.get('url', ''):
+                    for sub_ext in ext.get('extension', []):
+                        if sub_ext.get('url') == 'text':
+                            processed_patient['ethnicity'] = sub_ext.get('valueString')
+                elif 'us-core-birthsex' in ext.get('url', ''):
+                    processed_patient['birth_sex'] = ext.get('valueCode')
+        
+        # Test 3: Store in local database
+        try:
+            local_db.upsert_patient(processed_patient)
+            db_success = True
+        except Exception as db_error:
+            db_success = False
+            db_error_msg = str(db_error)
+        
+        return {
+            "patient_response_keys": list(patient_response.keys()),
+            "entry_count": len(patient_response.get('entry', [])),
+            "processed_patient": processed_patient,
+            "database_success": db_success,
+            "database_error": db_error_msg if not db_success else None
+        }
+        
+    except Exception as e:
+        return {"error": str(e), "traceback": str(e.__traceback__)}
+
 @app.get("/sync/status")
 def get_sync_status():
     """Get sync status for all resource types"""
