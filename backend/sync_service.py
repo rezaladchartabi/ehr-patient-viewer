@@ -233,13 +233,13 @@ class SyncService:
         
         for patient_id in patient_ids:
             try:
-                # Use the fetch_from_fhir function if available, otherwise fall back to HTTP
+                # Use the /Patient/by-ids endpoint which we know works
                 if self.fetch_from_fhir:
-                    patient_data = await self.fetch_from_fhir("/Patient", {'_id': patient_id})
+                    patient_data = await self.fetch_from_fhir("/Patient/by-ids", {'ids': patient_id})
                 else:
                     # Fallback to direct HTTP call
                     async with httpx.AsyncClient(timeout=30.0) as client:
-                        url = f"{self.fhir_base_url}/Patient?_id={patient_id}"
+                        url = f"{self.fhir_base_url}/Patient/by-ids?ids={patient_id}"
                         response = await client.get(url)
                         response.raise_for_status()
                         patient_data = response.json()
