@@ -267,19 +267,25 @@ export const usePatientData = () => {
     setError(null);
 
     try {
-      // Parallel fetch for better performance
-      const [summaryRes, encountersRes, conditionsRes, allergiesRes] = await Promise.all([
-        fetch(`${API_BASE}/patients/summary?patient=Patient/${patient.id}`),
+      // Get patient data from local database (includes allergies)
+      const patientRes = await fetch(`${API_BASE}/local/patients/${patient.id}`);
+      
+      if (!patientRes.ok) {
+        throw new Error(`Failed to fetch patient data: ${patientRes.status}`);
+      }
+      
+      const patientData = await patientRes.json();
+      
+      // For now, we'll still fetch encounters and conditions from FHIR
+      // In the future, these should also be moved to local database
+      const [encountersRes, conditionsRes] = await Promise.all([
         fetch(`${API_BASE}/Encounter?patient=Patient/${patient.id}&_count=100`),
-        fetch(`${API_BASE}/Condition?patient=Patient/${patient.id}&_count=100`),
-        fetch(`${API_BASE}/AllergyIntolerance?patient=Patient/${patient.id}&_count=100`)
+        fetch(`${API_BASE}/Condition?patient=Patient/${patient.id}&_count=100`)
       ]);
 
-      const [summaryData, encountersData, conditionsData, allergiesData] = await Promise.all([
-        summaryRes.json(),
+      const [encountersData, conditionsData] = await Promise.all([
         encountersRes.json(),
-        conditionsRes.json(),
-        allergiesRes.json()
+        conditionsRes.json()
       ]);
 
       // Process encounters
@@ -316,44 +322,24 @@ export const usePatientData = () => {
         status: entry.resource.clinicalStatus?.coding?.[0]?.code || ''
       })) : [];
 
-      // Process allergies
-      const processedAllergies = allergiesData.entry ? allergiesData.entry.map((entry: any) => ({
-        id: entry.resource.id,
-        patient_id: entry.resource.patient?.reference?.split('/')[1] || '',
-        code: entry.resource.code?.coding?.[0]?.code || '',
-        code_display: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || '',
-        code_system: entry.resource.code?.coding?.[0]?.system || '',
-        category: entry.resource.category?.[0]?.coding?.[0]?.display || '',
-        clinical_status: entry.resource.clinicalStatus?.coding?.[0]?.code || '',
-        verification_status: entry.resource.verificationStatus?.coding?.[0]?.code || '',
-        type: entry.resource.type?.[0]?.coding?.[0]?.display || '',
-        criticality: entry.resource.criticality?.coding?.[0]?.code || '',
-        onset_date: entry.resource.onsetDateTime || '',
-        recorded_date: entry.resource.recordedDate || '',
-        recorder: entry.resource.recorder?.display || '',
-        asserter: entry.resource.asserter?.display || '',
-        last_occurrence: entry.resource.lastOccurrence || '',
-        note: entry.resource.note?.[0]?.text || ''
-      })) : [];
-
       // Create patient summary
       const summary: PatientSummary = {
-        patient: { ...patient, allergies: processedAllergies },
+        patient: { ...patient, allergies: patientData.allergies || [] },
         summary: {
-          conditions: summaryData?.summary?.conditions || 0,
-          medications: summaryData?.summary?.medications || 0,
-          encounters: summaryData?.summary?.encounters || 0,
-          medication_administrations: summaryData?.summary?.medication_administrations || 0,
-          medication_requests: summaryData?.summary?.medication_requests || 0,
-          observations: summaryData?.summary?.observations || 0,
-          procedures: summaryData?.summary?.procedures || 0,
-          specimens: summaryData?.summary?.specimens || 0,
+          conditions: processedConditions.length,
+          medications: 0, // Will be updated when we add medication data to local DB
+          encounters: processedEncounters.length,
+          medication_administrations: 0,
+          medication_requests: 0,
+          observations: 0,
+          procedures: 0,
+          specimens: 0,
         }
       };
 
       // Cache the data
       patientDataCache.set(cacheKey, {
-        data: { summary, encounters: processedEncounters, conditions: processedConditions, allergies: processedAllergies },
+        data: { summary, encounters: processedEncounters, conditions: processedConditions, allergies: patientData.allergies || [] },
         timestamp: Date.now(),
         ttl: CACHE_TTL
       });
@@ -361,7 +347,7 @@ export const usePatientData = () => {
       setPatientSummary(summary);
       setEncounters(processedEncounters);
       setConditions(processedConditions);
-      setCurrentPatient({ ...patient, allergies: processedAllergies });
+      setCurrentPatient({ ...patient, allergies: patientData.allergies || [] });
 
     } catch (err: any) {
       setError(`Failed to fetch patient data: ${err.message}`);

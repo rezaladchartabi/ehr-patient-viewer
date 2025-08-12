@@ -15,6 +15,8 @@ import sqlite3
 import pickle
 import hashlib
 from contextlib import asynccontextmanager
+from local_db import LocalDatabase
+from sync_service import SyncService
 
 # Configuration
 FHIR_BASE_URL = "https://gel-landscapes-impaired-vitamin.trycloudflare.com/fhir"
@@ -28,6 +30,10 @@ CONNECTION_TIMEOUT = 30.0
 cache: Dict[str, Dict] = {}
 rate_limit_tracker: Dict[str, List[float]] = defaultdict(list)
 http_client: Optional[httpx.AsyncClient] = None
+
+# Local database and sync service
+local_db = LocalDatabase("local_ehr.db")
+sync_service = SyncService(FHIR_BASE_URL, local_db)
 
 # Search index (SQLite FTS5)
 SEARCH_DB_PATH = os.path.join(os.path.dirname(__file__), "search_index.sqlite3")
@@ -1213,6 +1219,101 @@ def clear_cache():
     global cache
     cache.clear()
     return {"message": "Cache cleared successfully"}
+
+# Local Database Endpoints
+@app.get("/local/patients")
+async def get_local_patients(limit: int = 25, offset: int = 0):
+    """Get patients from local database"""
+    try:
+        patients = local_db.get_all_patients(limit, offset)
+        total_count = local_db.get_patient_count()
+        
+        return {
+            "patients": patients,
+            "total_count": total_count,
+            "limit": limit,
+            "offset": offset
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.get("/local/patients/{patient_id}")
+async def get_local_patient(patient_id: str):
+    """Get a specific patient with allergies from local database"""
+    try:
+        patient = local_db.get_patient_with_allergies(patient_id)
+        if not patient:
+            raise HTTPException(status_code=404, detail="Patient not found")
+        return patient
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.get("/local/patients/by-ids")
+async def get_local_patients_by_ids(ids: str):
+    """Get multiple patients by IDs from local database"""
+    try:
+        patient_ids = ids.split(',')
+        patients = local_db.get_patients_by_ids(patient_ids)
+        return {"patients": patients}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+# Sync Endpoints
+@app.post("/sync/start")
+async def start_sync():
+    """Start a manual sync from FHIR server"""
+    try:
+        results = await sync_service.sync_all_resources()
+        return {
+            "status": "success",
+            "results": results,
+            "message": "Sync completed successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+@app.post("/sync/patients")
+async def sync_specific_patients(patient_ids: List[str]):
+    """Sync specific patients from FHIR server"""
+    try:
+        results = await sync_service.sync_specific_patients(patient_ids)
+        return {
+            "status": "success",
+            "results": results,
+            "message": f"Synced {len(patient_ids)} patients"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+@app.get("/sync/status")
+def get_sync_status():
+    """Get sync status for all resource types"""
+    try:
+        status = {}
+        resource_types = ['Patient', 'AllergyIntolerance', 'Condition', 'Encounter', 
+                         'MedicationRequest', 'MedicationAdministration', 'Observation', 
+                         'Procedure', 'Specimen']
+        
+        for resource_type in resource_types:
+            sync_info = local_db.get_last_sync_info(resource_type)
+            status[resource_type] = sync_info or {"status": "never_synced"}
+        
+        return status
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get sync status: {str(e)}")
+
+@app.post("/sync/start-periodic")
+async def start_periodic_sync():
+    """Start periodic sync service in background"""
+    try:
+        # Start periodic sync in background
+        asyncio.create_task(sync_service.start_periodic_sync())
+        return {
+            "status": "success",
+            "message": "Periodic sync service started"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to start periodic sync: {str(e)}")
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):

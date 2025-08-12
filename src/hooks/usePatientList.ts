@@ -128,28 +128,28 @@ export const usePatientList = () => {
     setError(null);
 
     try {
-      let url: string;
       let processedPatients: Patient[] = [];
       
       // Try allowlist first if we have IDs and allowlist is enabled
       if (ALLOWLIST_IDS.length > 0 && USE_ALLOWLIST) {
         try {
-          url = `${API_BASE}/Patient/by-ids?ids=${ALLOWLIST_IDS.join(',')}`;
+          const url = `${API_BASE}/local/patients/by-ids?ids=${ALLOWLIST_IDS.join(',')}`;
           const res = await fetch(url);
           if (res.ok) {
             const data = await res.json();
-            processedPatients = data.entry ? data.entry.map((entry: any) => ({
-              id: entry.resource.id,
-              family_name: entry.resource.name?.[0]?.family || 'Unknown',
-              gender: entry.resource.gender || 'Unknown',
-              birth_date: entry.resource.birthDate || 'Unknown',
-              race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.extension?.find((subExt: any) => subExt.url === 'text')?.valueString,
-              ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')?.extension?.find((subExt: any) => subExt.url === 'text')?.valueString,
-              birth_sex: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex')?.valueCode,
-              identifier: entry.resource.identifier?.[0]?.value,
-              marital_status: entry.resource.maritalStatus?.coding?.[0]?.code,
-              deceased_date: entry.resource.deceasedDateTime,
-              managing_organization: entry.resource.managingOrganization?.reference
+            processedPatients = data.patients ? data.patients.map((patient: any) => ({
+              id: patient.id,
+              family_name: patient.family_name || 'Unknown',
+              gender: patient.gender || 'Unknown',
+              birth_date: patient.birth_date || 'Unknown',
+              race: patient.race,
+              ethnicity: patient.ethnicity,
+              birth_sex: patient.birth_sex,
+              identifier: patient.identifier,
+              marital_status: patient.marital_status,
+              deceased_date: patient.deceased_date,
+              managing_organization: patient.managing_organization,
+              allergies: patient.allergies || []
             })) : [];
           }
         } catch (allowlistError) {
@@ -159,30 +159,32 @@ export const usePatientList = () => {
       
       // If allowlist failed or is empty, fetch regular patients
       if (processedPatients.length === 0) {
-        url = `${API_BASE}/Patient?_count=${PATIENTS_PER_PAGE}`;
+        const url = `${API_BASE}/local/patients?limit=${PATIENTS_PER_PAGE}&offset=0`;
         const res = await fetch(url);
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
         }
         const data = await res.json();
 
-        processedPatients = data.entry ? data.entry.map((entry: any) => ({
-          id: entry.resource.id,
-          family_name: entry.resource.name?.[0]?.family || 'Unknown',
-          gender: entry.resource.gender || 'Unknown',
-          birth_date: entry.resource.birthDate || 'Unknown',
-          race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.extension?.find((subExt: any) => subExt.url === 'text')?.valueString,
-          ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')?.extension?.find((subExt: any) => subExt.url === 'text')?.valueString,
-          birth_sex: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex')?.valueCode,
-          identifier: entry.resource.identifier?.[0]?.value,
-          marital_status: entry.resource.maritalStatus?.coding?.[0]?.code,
-          deceased_date: entry.resource.deceasedDateTime,
-          managing_organization: entry.resource.managingOrganization?.reference
+        processedPatients = data.patients ? data.patients.map((patient: any) => ({
+          id: patient.id,
+          family_name: patient.family_name || 'Unknown',
+          gender: patient.gender || 'Unknown',
+          birth_date: patient.birth_date || 'Unknown',
+          race: patient.race,
+          ethnicity: patient.ethnicity,
+          birth_sex: patient.birth_sex,
+          identifier: patient.identifier,
+          marital_status: patient.marital_status,
+          deceased_date: patient.deceased_date,
+          managing_organization: patient.managing_organization,
+          allergies: patient.allergies || []
         })) : [];
 
         // Set next page cursor for pagination
-        const nextLink = data.link?.find((l: any) => l.relation === 'next')?.url;
-        setNextPageCursor(nextLink || null);
+        if (data.total_count > PATIENTS_PER_PAGE) {
+          setNextPageCursor('1'); // Simple offset-based pagination
+        }
       }
 
       // Cache the data
