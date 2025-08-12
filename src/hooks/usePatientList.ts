@@ -32,7 +32,7 @@ const getCacheKey = (cursor?: string, allowlist?: string[]) => {
 };
 
 // API base URL
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.REACT_APP_API_URL || 'https://ehr-backend-87r9.onrender.com';
 
 // Allowlist IDs for specific patients (only real IDs from FHIR server)
 const ALLOWLIST_IDS = [
