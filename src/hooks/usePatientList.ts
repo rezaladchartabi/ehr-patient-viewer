@@ -143,11 +143,11 @@ export const usePatientList = () => {
               family_name: entry.resource.name?.[0]?.family || 'Unknown',
               gender: entry.resource.gender || 'Unknown',
               birth_date: entry.resource.birthDate || 'Unknown',
-              race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.valueCodeableConcept?.text,
-              ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')?.valueCodeableConcept?.text,
+              race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.extension?.find((subExt: any) => subExt.url === 'text')?.valueString,
+              ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')?.extension?.find((subExt: any) => subExt.url === 'text')?.valueString,
               birth_sex: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex')?.valueCode,
               identifier: entry.resource.identifier?.[0]?.value,
-              marital_status: entry.resource.maritalStatus?.text,
+              marital_status: entry.resource.maritalStatus?.coding?.[0]?.code,
               deceased_date: entry.resource.deceasedDateTime,
               managing_organization: entry.resource.managingOrganization?.reference
             })) : [];
@@ -171,11 +171,11 @@ export const usePatientList = () => {
           family_name: entry.resource.name?.[0]?.family || 'Unknown',
           gender: entry.resource.gender || 'Unknown',
           birth_date: entry.resource.birthDate || 'Unknown',
-          race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.valueCodeableConcept?.text,
-          ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')?.valueCodeableConcept?.text,
+          race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.extension?.find((subExt: any) => subExt.url === 'text')?.valueString,
+          ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-ethnicity')?.extension?.find((subExt: any) => subExt.url === 'text')?.valueString,
           birth_sex: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-birthsex')?.valueCode,
           identifier: entry.resource.identifier?.[0]?.value,
-          marital_status: entry.resource.maritalStatus?.text,
+          marital_status: entry.resource.maritalStatus?.coding?.[0]?.code,
           deceased_date: entry.resource.deceasedDateTime,
           managing_organization: entry.resource.managingOrganization?.reference
         })) : [];
@@ -233,11 +233,11 @@ export const usePatientList = () => {
         family_name: entry.resource.name?.[0]?.family || 'Unknown',
         gender: entry.resource.gender || 'Unknown',
         birth_date: entry.resource.birthDate || 'Unknown',
-        race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.valueCodeableConcept?.text,
-        ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us-core/StructureDefinition/us-core-ethnicity')?.valueCodeableConcept?.text,
+        race: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us/core/StructureDefinition/us-core-race')?.extension?.find((subExt: any) => subExt.url === 'text')?.valueString,
+        ethnicity: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us-core/StructureDefinition/us-core-ethnicity')?.extension?.find((subExt: any) => subExt.url === 'text')?.valueString,
         birth_sex: entry.resource.extension?.find((ext: any) => ext.url === 'http://hl7.org/fhir/us-core/StructureDefinition/us-core-birthsex')?.valueCode,
         identifier: entry.resource.identifier?.[0]?.value,
-        marital_status: entry.resource.maritalStatus?.text,
+        marital_status: entry.resource.maritalStatus?.coding?.[0]?.code,
         deceased_date: entry.resource.deceasedDateTime,
         managing_organization: entry.resource.managingOrganization?.reference
       })) : [];
