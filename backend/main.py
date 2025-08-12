@@ -1276,7 +1276,86 @@ async def start_sync():
 async def sync_specific_patients(patient_ids: List[str]):
     """Sync specific patients from FHIR server"""
     try:
-        results = await sync_service.sync_specific_patients(patient_ids)
+        results = {}
+        
+        for patient_id in patient_ids:
+            try:
+                # Get patient data using our existing endpoint
+                patient_response = await get_patient_by_id(patient_id)
+                if patient_response and 'entry' in patient_response and len(patient_response['entry']) > 0:
+                    patient_resource = patient_response['entry'][0]['resource']
+                    
+                    # Process and store patient data
+                    processed_patient = {
+                        'id': patient_resource.get('id'),
+                        'family_name': patient_resource.get('name', [{}])[0].get('family') if patient_resource.get('name') else None,
+                        'gender': patient_resource.get('gender'),
+                        'birth_date': patient_resource.get('birthDate'),
+                        'race': None,  # Will be extracted by sync service
+                        'ethnicity': None,  # Will be extracted by sync service
+                        'birth_sex': None,  # Will be extracted by sync service
+                        'identifier': patient_resource.get('identifier', [{}])[0].get('value') if patient_resource.get('identifier') else None,
+                        'marital_status': patient_resource.get('maritalStatus', {}).get('coding', [{}])[0].get('code') if patient_resource.get('maritalStatus') else None,
+                        'deceased_date': patient_resource.get('deceasedDateTime'),
+                        'managing_organization': patient_resource.get('managingOrganization', {}).get('reference') if patient_resource.get('managingOrganization') else None,
+                        'last_updated': patient_resource.get('meta', {}).get('lastUpdated'),
+                        'version_id': patient_resource.get('meta', {}).get('versionId')
+                    }
+                    
+                    # Extract race, ethnicity, birth_sex from extensions
+                    if patient_resource.get('extension'):
+                        for ext in patient_resource['extension']:
+                            if 'us-core-race' in ext.get('url', ''):
+                                for sub_ext in ext.get('extension', []):
+                                    if sub_ext.get('url') == 'text':
+                                        processed_patient['race'] = sub_ext.get('valueString')
+                            elif 'us-core-ethnicity' in ext.get('url', ''):
+                                for sub_ext in ext.get('extension', []):
+                                    if sub_ext.get('url') == 'text':
+                                        processed_patient['ethnicity'] = sub_ext.get('valueString')
+                            elif 'us-core-birthsex' in ext.get('url', ''):
+                                processed_patient['birth_sex'] = ext.get('valueCode')
+                    
+                    # Store in local database
+                    local_db.upsert_patient(processed_patient)
+                    
+                    # Get allergies for this patient
+                    try:
+                        allergies_response = await get_allergies(patient=f'Patient/{patient_id}')
+                        if allergies_response and 'entry' in allergies_response:
+                            for entry in allergies_response['entry']:
+                                allergy_resource = entry['resource']
+                                processed_allergy = {
+                                    'id': allergy_resource.get('id'),
+                                    'patient_id': patient_id,
+                                    'code': allergy_resource.get('code', {}).get('coding', [{}])[0].get('code') if allergy_resource.get('code') else None,
+                                    'code_display': allergy_resource.get('code', {}).get('text') or allergy_resource.get('code', {}).get('coding', [{}])[0].get('display') if allergy_resource.get('code') else None,
+                                    'code_system': allergy_resource.get('code', {}).get('coding', [{}])[0].get('system') if allergy_resource.get('code') else None,
+                                    'category': allergy_resource.get('category', [{}])[0].get('coding', [{}])[0].get('display') if allergy_resource.get('category') else None,
+                                    'clinical_status': allergy_resource.get('clinicalStatus', {}).get('coding', [{}])[0].get('code') if allergy_resource.get('clinicalStatus') else None,
+                                    'verification_status': allergy_resource.get('verificationStatus', {}).get('coding', [{}])[0].get('code') if allergy_resource.get('verificationStatus') else None,
+                                    'type': allergy_resource.get('type', [{}])[0].get('coding', [{}])[0].get('display') if allergy_resource.get('type') else None,
+                                    'criticality': allergy_resource.get('criticality'),
+                                    'onset_date': allergy_resource.get('onsetDateTime'),
+                                    'recorded_date': allergy_resource.get('recordedDate'),
+                                    'recorder': allergy_resource.get('recorder', {}).get('display') if allergy_resource.get('recorder') else None,
+                                    'asserter': allergy_resource.get('asserter', {}).get('display') if allergy_resource.get('asserter') else None,
+                                    'last_occurrence': allergy_resource.get('lastOccurrence'),
+                                    'note': allergy_resource.get('note', [{}])[0].get('text') if allergy_resource.get('note') else None,
+                                    'last_updated': allergy_resource.get('meta', {}).get('lastUpdated'),
+                                    'version_id': allergy_resource.get('meta', {}).get('versionId')
+                                }
+                                local_db.upsert_allergy(processed_allergy)
+                    except Exception as allergy_error:
+                        logger.warning(f"Failed to sync allergies for patient {patient_id}: {allergy_error}")
+                    
+                    results[patient_id] = {'status': 'success'}
+                else:
+                    results[patient_id] = {'status': 'error', 'error': 'Patient not found'}
+                    
+            except Exception as e:
+                results[patient_id] = {'status': 'error', 'error': str(e)}
+        
         return {
             "status": "success",
             "results": results,
@@ -1284,6 +1363,14 @@ async def sync_specific_patients(patient_ids: List[str]):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+async def get_patient_by_id(patient_id: str):
+    """Get a specific patient by ID"""
+    try:
+        return await fetch_from_fhir("/Patient/by-ids", {'ids': patient_id})
+    except Exception as e:
+        logger.error(f"Failed to fetch patient {patient_id}: {e}")
+        return None
 
 @app.get("/sync/status")
 def get_sync_status():
