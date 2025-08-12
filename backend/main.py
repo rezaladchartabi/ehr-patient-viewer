@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 from urllib.parse import urlencode
 import time
 import json
+import logging
 from collections import defaultdict
 import os
 import sqlite3
@@ -17,6 +18,10 @@ import hashlib
 from contextlib import asynccontextmanager
 from local_db import LocalDatabase
 from sync_service import SyncService
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Configuration
 FHIR_BASE_URL = "https://gel-landscapes-impaired-vitamin.trycloudflare.com/fhir"
@@ -1253,9 +1258,14 @@ async def get_local_patients_by_ids(ids: str):
     """Get multiple patients by IDs from local database"""
     try:
         patient_ids = ids.split(',')
+        logger.info(f"Looking for patients: {patient_ids}")
+        
         patients = local_db.get_patients_by_ids(patient_ids)
+        logger.info(f"Found {len(patients)} patients")
+        
         return {"patients": patients}
     except Exception as e:
+        logger.error(f"Error in get_local_patients_by_ids: {e}")
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 # Sync Endpoints
