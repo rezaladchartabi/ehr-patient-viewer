@@ -1158,6 +1158,33 @@ async def get_specimens(
     
     return data
 
+@app.get("/AllergyIntolerance")
+async def get_allergies(
+    patient: Optional[str] = None,
+    _count: Optional[int] = 100
+):
+    """Get allergies from FHIR server with caching"""
+    # Fetch from FHIR
+    params = {"_count": _count}
+    if patient:
+        params["patient"] = patient
+    cache_key = build_cache_key("GET", "/AllergyIntolerance", params)
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
+    
+    data = await fetch_from_fhir("/AllergyIntolerance", params)
+    
+    # Cache the result
+    cache[cache_key] = {
+        "data": data,
+        "timestamp": time.time()
+    }
+    
+    return data
+
 @app.get("/cache/status")
 def get_cache_status():
     """Get cache status and statistics"""
