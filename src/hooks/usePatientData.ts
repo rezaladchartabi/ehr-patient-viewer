@@ -13,6 +13,26 @@ export interface Patient {
   marital_status?: string;
   deceased_date?: string;
   managing_organization?: string;
+  allergies?: Allergy[];
+}
+
+export interface Allergy {
+  id: string;
+  patient_id: string;
+  code: string;
+  code_display: string;
+  code_system: string;
+  category: string;
+  clinical_status: string;
+  verification_status: string;
+  type: string;
+  criticality: string;
+  onset_date: string;
+  recorded_date: string;
+  recorder: string;
+  asserter: string;
+  last_occurrence: string;
+  note: string;
 }
 
 export interface Condition {
@@ -239,7 +259,7 @@ export const usePatientData = () => {
       setPatientSummary(cached.data.summary);
       setEncounters(cached.data.encounters);
       setConditions(cached.data.conditions);
-      setCurrentPatient(patient);
+      setCurrentPatient({ ...patient, allergies: cached.data.allergies });
       return;
     }
 
@@ -248,16 +268,18 @@ export const usePatientData = () => {
 
     try {
       // Parallel fetch for better performance
-      const [summaryRes, encountersRes, conditionsRes] = await Promise.all([
+      const [summaryRes, encountersRes, conditionsRes, allergiesRes] = await Promise.all([
         fetch(`${API_BASE}/patients/summary?patient=Patient/${patient.id}`),
         fetch(`${API_BASE}/Encounter?patient=Patient/${patient.id}&_count=100`),
-        fetch(`${API_BASE}/Condition?patient=Patient/${patient.id}&_count=100`)
+        fetch(`${API_BASE}/Condition?patient=Patient/${patient.id}&_count=100`),
+        fetch(`${API_BASE}/AllergyIntolerance?patient=Patient/${patient.id}&_count=100`)
       ]);
 
-      const [summaryData, encountersData, conditionsData] = await Promise.all([
+      const [summaryData, encountersData, conditionsData, allergiesData] = await Promise.all([
         summaryRes.json(),
         encountersRes.json(),
-        conditionsRes.json()
+        conditionsRes.json(),
+        allergiesRes.json()
       ]);
 
       // Process encounters
@@ -294,9 +316,29 @@ export const usePatientData = () => {
         status: entry.resource.clinicalStatus?.coding?.[0]?.code || ''
       })) : [];
 
+      // Process allergies
+      const processedAllergies = allergiesData.entry ? allergiesData.entry.map((entry: any) => ({
+        id: entry.resource.id,
+        patient_id: entry.resource.patient?.reference?.split('/')[1] || '',
+        code: entry.resource.code?.coding?.[0]?.code || '',
+        code_display: entry.resource.code?.text || entry.resource.code?.coding?.[0]?.display || '',
+        code_system: entry.resource.code?.coding?.[0]?.system || '',
+        category: entry.resource.category?.[0]?.coding?.[0]?.display || '',
+        clinical_status: entry.resource.clinicalStatus?.coding?.[0]?.code || '',
+        verification_status: entry.resource.verificationStatus?.coding?.[0]?.code || '',
+        type: entry.resource.type?.[0]?.coding?.[0]?.display || '',
+        criticality: entry.resource.criticality?.coding?.[0]?.code || '',
+        onset_date: entry.resource.onsetDateTime || '',
+        recorded_date: entry.resource.recordedDate || '',
+        recorder: entry.resource.recorder?.display || '',
+        asserter: entry.resource.asserter?.display || '',
+        last_occurrence: entry.resource.lastOccurrence || '',
+        note: entry.resource.note?.[0]?.text || ''
+      })) : [];
+
       // Create patient summary
       const summary: PatientSummary = {
-        patient,
+        patient: { ...patient, allergies: processedAllergies },
         summary: {
           conditions: summaryData?.summary?.conditions || 0,
           medications: summaryData?.summary?.medications || 0,
@@ -311,7 +353,7 @@ export const usePatientData = () => {
 
       // Cache the data
       patientDataCache.set(cacheKey, {
-        data: { summary, encounters: processedEncounters, conditions: processedConditions },
+        data: { summary, encounters: processedEncounters, conditions: processedConditions, allergies: processedAllergies },
         timestamp: Date.now(),
         ttl: CACHE_TTL
       });
@@ -319,7 +361,7 @@ export const usePatientData = () => {
       setPatientSummary(summary);
       setEncounters(processedEncounters);
       setConditions(processedConditions);
-      setCurrentPatient(patient);
+      setCurrentPatient({ ...patient, allergies: processedAllergies });
 
     } catch (err: any) {
       setError(`Failed to fetch patient data: ${err.message}`);

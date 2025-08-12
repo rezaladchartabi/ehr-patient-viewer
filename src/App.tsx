@@ -203,6 +203,25 @@ function App() {
                     <td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Managing Org</td>
                     <td style={{ padding: '8px', border: '1px solid #ddd' }}>{currentPatient.managing_organization}</td>
                   </tr>
+                  <tr>
+                    <td style={{ padding: '8px', border: '1px solid #ddd', fontWeight: 'bold' }}>Allergies</td>
+                    <td style={{ padding: '8px', border: '1px solid #ddd' }}>
+                      {currentPatient.allergies && currentPatient.allergies.length > 0 ? (
+                        <ul style={{ margin: 0, paddingLeft: '20px' }}>
+                          {currentPatient.allergies.map((allergy, index) => (
+                            <li key={allergy.id} style={{ marginBottom: '4px' }}>
+                              <strong>{allergy.code_display}</strong>
+                              {allergy.clinical_status && ` (${allergy.clinical_status})`}
+                              {allergy.criticality && ` - ${allergy.criticality}`}
+                              {allergy.note && ` - ${allergy.note}`}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        'None known'
+                      )}
+                    </td>
+                  </tr>
                 </tbody>
               </table>
 
