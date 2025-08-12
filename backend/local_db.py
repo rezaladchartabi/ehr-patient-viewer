@@ -445,15 +445,25 @@ class LocalDatabase:
         if not patient_ids:
             return []
         
-        with sqlite3.connect(self.db_path) as conn:
-            placeholders = ','.join(['?' for _ in patient_ids])
-            cursor = conn.execute(
-                f"SELECT * FROM patients WHERE id IN ({placeholders})",
-                patient_ids
-            )
-            rows = cursor.fetchall()
-            
-            return [dict(zip([col[0] for col in cursor.description], row)) for row in rows]
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                placeholders = ','.join(['?' for _ in patient_ids])
+                cursor = conn.execute(
+                    f"SELECT * FROM patients WHERE id IN ({placeholders})",
+                    patient_ids
+                )
+                rows = cursor.fetchall()
+                
+                if not rows:
+                    return []
+                
+                # Get column names
+                columns = [description[0] for description in cursor.description]
+                
+                return [dict(zip(columns, row)) for row in rows]
+        except Exception as e:
+            logger.error(f"Error in get_patients_by_ids: {e}")
+            return []
     
     def get_all_patients(self, limit: int = 25, offset: int = 0) -> List[Dict[str, Any]]:
         """Get all patients with pagination"""
