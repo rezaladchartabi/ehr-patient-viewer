@@ -20,12 +20,12 @@ from contextlib import asynccontextmanager
 try:
     from local_db import LocalDatabase
     from sync_service import SyncService
-    from allergy_processor import AllergyProcessor
+    from simple_allergy_extractor import SimpleAllergyExtractor
 except ImportError:
     # When imported as a package (e.g., uvicorn backend.main:app)
     from backend.local_db import LocalDatabase
     from backend.sync_service import SyncService
-    from backend.allergy_processor import AllergyProcessor
+    from backend.simple_allergy_extractor import SimpleAllergyExtractor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1991,8 +1991,8 @@ async def extract_allergies_from_text(request: Request):
         if not text:
             raise HTTPException(status_code=400, detail="Text field is required")
         
-        processor = AllergyProcessor()
-        allergies = processor.extract_allergies_from_text(text)
+        extractor = SimpleAllergyExtractor()
+        allergies = extractor.extract_allergies_from_text(text)
         
         return {
             "allergies": allergies,
