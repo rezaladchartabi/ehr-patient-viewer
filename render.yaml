@@ -9,7 +9,9 @@ services:
       - key: PYTHON_VERSION
         value: 3.11.0
       - key: PORT
-        value: 8000
+        value: 8005
+              - key: FHIR_BASE_URL
+          value: https://fdfbc9a33dc5.ngrok-free.app/fhir
 
   # Frontend Static Site
   - type: web
@@ -18,8 +20,8 @@ services:
     buildCommand: npm install && npm run build
     staticPublishPath: ./build
     envVars:
-      - key: REACT_APP_API_URL
-        value: https://ehr-backend-87r9.onrender.com
+              - key: REACT_APP_API_URL
+          value: https://ehr-backend-87r9.onrender.com  # Your Render backend URL
     routes:
       - type: rewrite
         source: /*

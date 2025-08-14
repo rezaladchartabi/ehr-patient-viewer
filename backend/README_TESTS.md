@@ -1,176 +1,348 @@
-# FHIR Proxy Backend Tests
+# Testing Guide for EHR Backend
 
-This directory contains comprehensive unit tests for the FHIR proxy backend service.
+This document explains the updated test structure and how to run tests with the new architecture.
 
-## 🧪 Test Structure
+## Test Structure Overview
 
-### Test Classes
+### Backend Tests
 
-1. **TestCacheFunctions** - Tests cache-related utility functions
-   - `test_get_cache_key()` - Tests cache key generation
-   - `test_is_cacheable()` - Tests cacheable endpoint detection
+The backend tests have been completely rewritten to work with the new architecture:
 
-2. **TestRateLimiter** - Tests rate limiting functionality
-   - `test_rate_limiter_initial_state()` - Tests initial configuration
-   - `test_rate_limiter_allows_requests()` - Tests request allowance within limits
-   - `test_rate_limiter_window_expiry()` - Tests cleanup of expired requests
+- **`test_main_updated.py`**: Main test file with comprehensive test coverage
+- **`pytest.ini`**: Pytest configuration with coverage settings
+- **`run_tests.py`**: Test runner script with various options
 
-3. **TestHealthEndpoints** - Tests health and status endpoints
-   - `test_root_endpoint()` - Tests root health check
-   - `test_cache_status_endpoint()` - Tests cache statistics
-   - `test_cache_clear_endpoint()` - Tests cache clearing
+### Frontend Tests
 
-4. **TestFHIREndpoints** - Tests all FHIR proxy endpoints
-   - `test_patient_endpoint()` - Tests patient data retrieval
-   - `test_condition_endpoint()` - Tests condition data retrieval
-   - `test_medication_request_endpoint()` - Tests medication request data
-   - `test_medication_administration_endpoint()` - Tests medication administration data
-   - `test_encounter_endpoint()` - Tests encounter data
-   - `test_observation_endpoint()` - Tests observation data
-   - `test_procedure_endpoint()` - Tests procedure data
-   - `test_specimen_endpoint()` - Tests specimen data
+Frontend tests are located in `src/__tests__/`:
 
-5. **TestCacheFunctionality** - Tests caching behavior
-   - `test_cache_hit()` - Tests cache usage for repeated requests
-   - `test_cache_expiry()` - Tests cache expiration after TTL
+- **`App.test.tsx`**: Tests for the main App component
+- **`hooks.test.tsx`**: Tests for custom React hooks
 
-6. **TestErrorHandling** - Tests error scenarios
-   - `test_fhir_server_error()` - Tests FHIR server error handling
-   - `test_http_exception()` - Tests HTTP exception handling
+## Running Tests
 
-7. **TestRateLimiting** - Tests rate limiting middleware
-   - `test_rate_limiting_middleware()` - Tests rate limiting enforcement
+### Backend Tests
 
-8. **TestParameterHandling** - Tests parameter processing
-   - `test_optional_parameters()` - Tests optional parameter handling
-
-## 🚀 Running Tests
-
-### Prerequisites
-
-Install test dependencies:
+#### Quick Start
 ```bash
-pip install -r requirements.txt
+cd backend
+python run_tests.py
+```
+
+#### Advanced Options
+```bash
+# Run with verbose output
+python run_tests.py --verbose
+
+# Run without coverage
+python run_tests.py --no-coverage
+
+# Run specific test
+python run_tests.py --test TestCacheSystem::test_cache_basic_operations
+
+# Run only unit tests
+python run_tests.py --markers unit
+
+# Run only integration tests
+python run_tests.py --markers integration
+```
+
+#### Direct Pytest Commands
+```bash
+# Run all tests
+pytest test_main_updated.py -v
+
+# Run with coverage
+pytest test_main_updated.py --cov=. --cov-report=html
+
+# Run specific test class
+pytest test_main_updated.py::TestCacheSystem -v
+
+# Run specific test method
+pytest test_main_updated.py::TestCacheSystem::test_cache_basic_operations -v
+```
+
+### Frontend Tests
+
+#### Quick Start
+```bash
+# From project root
+npm test
+
+# Run with coverage
+npm run test:coverage
+
+# Run tests in CI mode
+npm run test:ci
+```
+
+#### Advanced Options
+```bash
+# Run specific test file
+npm test -- --testPathPattern=App.test.tsx
+
+# Run tests in watch mode
+npm test -- --watch
+
+# Run tests with verbose output
+npm test -- --verbose
 ```
 
 ### Run All Tests
 
 ```bash
-# Using pytest directly
-pytest test_main.py -v
-
-# Using the test runner
-python run_tests.py run
+# Run both backend and frontend tests
+cd backend
+python run_tests.py --all
 ```
 
-### Run Specific Tests
+## Test Categories
 
-```bash
-# Run a specific test class
-pytest test_main.py::TestCacheFunctions -v
+### Backend Test Categories
 
-# Run a specific test method
-pytest test_main.py::TestCacheFunctions::test_get_cache_key -v
+1. **Configuration Tests** (`TestConfiguration`)
+   - Configuration loading
+   - Environment detection
 
-# Using the test runner
-python run_tests.py run TestCacheFunctions::test_get_cache_key
+2. **Cache System Tests** (`TestCacheSystem`)
+   - Basic cache operations
+   - Cache expiration
+   - Key normalization
+   - Cache statistics
+
+3. **Rate Limiter Tests** (`TestRateLimiter`)
+   - Basic rate limiting
+   - Window expiry
+   - Statistics tracking
+
+4. **Database Tests** (`TestDatabaseManager`)
+   - Database initialization
+   - Basic operations
+   - Connection pooling
+
+5. **Exception Handling Tests** (`TestExceptionHandling`)
+   - Custom exception classes
+   - Error handling
+
+6. **API Endpoint Tests**
+   - Health endpoints
+   - Local database endpoints
+   - FHIR proxy endpoints
+   - Error handling
+
+### Frontend Test Categories
+
+1. **Component Tests** (`App.test.tsx`)
+   - Component rendering
+   - User interactions
+   - Error handling
+   - Loading states
+
+2. **Hook Tests** (`hooks.test.tsx`)
+   - Custom hook functionality
+   - State management
+   - API integration
+   - Error handling
+
+## Test Environment Setup
+
+### Backend Test Environment
+
+The test environment is automatically configured with:
+
+- **In-memory SQLite database**: `:memory:` for fast, isolated tests
+- **Short cache TTL**: 0.1 seconds for quick expiration
+- **Short rate limit window**: 1 second for quick testing
+- **Reduced logging**: WARNING level to reduce noise
+- **Test environment detection**: Automatic detection via environment variables
+
+### Frontend Test Environment
+
+- **Mocked API client**: All API calls are mocked
+- **Mocked theme provider**: Consistent theme for tests
+- **Mocked data**: Realistic test data for all components
+
+## Test Data
+
+### Backend Test Data
+
+The tests use realistic mock data that matches the FHIR specification:
+
+```python
+mock_patients = [
+    {
+        "id": "test-patient-1",
+        "family_name": "TestPatient",
+        "gender": "male",
+        "birth_date": "1990-01-01",
+        # ... more fields
+    }
+]
 ```
 
-### List Available Tests
+### Frontend Test Data
 
-```bash
-python run_tests.py list
+Frontend tests use TypeScript interfaces that match the backend:
+
+```typescript
+const mockPatients: LocalPatient[] = [
+  {
+    id: 'test-patient-1',
+    family_name: 'TestPatient',
+    gender: 'male',
+    birth_date: '1990-01-01',
+    // ... more fields
+  }
+];
 ```
 
-## 📊 Test Coverage
+## Coverage Requirements
 
-The tests cover:
+### Backend Coverage
 
-- ✅ **Cache Management**: Key generation, cacheable detection, TTL handling
-- ✅ **Rate Limiting**: Request counting, window management, cleanup
-- ✅ **API Endpoints**: All FHIR resource endpoints
-- ✅ **Error Handling**: FHIR server errors, HTTP exceptions
-- ✅ **Parameter Processing**: Optional parameters, query string handling
-- ✅ **Health Checks**: Status endpoints, cache statistics
+- **Minimum coverage**: 80%
+- **Coverage reports**: HTML and terminal output
+- **Coverage areas**: All new modules and updated functions
 
-## 🔧 Test Configuration
+### Frontend Coverage
 
-### Mocking Strategy
+- **Component coverage**: All React components
+- **Hook coverage**: All custom hooks
+- **API integration**: All API client functions
 
-- **FHIR Server**: All tests mock `fetch_from_fhir()` to avoid external dependencies
-- **Time-based Tests**: Cache expiry tests manually manipulate timestamps
-- **Rate Limiting**: Tests use isolated rate limiter instances
+## Continuous Integration
 
-### Test Data
+### GitHub Actions (Recommended)
 
-- **Mock Responses**: Realistic FHIR Bundle responses
-- **Test Parameters**: Various parameter combinations
-- **Error Scenarios**: Network errors, HTTP exceptions
-
-## 🐛 Debugging Tests
-
-### Verbose Output
-
-```bash
-pytest test_main.py -v -s
-```
-
-### Debug Specific Test
-
-```bash
-# Add breakpoint in test
-import pdb; pdb.set_trace()
-
-# Run with debugger
-python -m pdb -m pytest test_main.py::TestCacheFunctions::test_get_cache_key
-```
-
-### Test Isolation
-
-Each test class uses `setup_method()` to ensure clean state:
-- Cache is cleared before each test
-- Rate limiter is reset
-- Mock objects are reset
-
-## 📈 Continuous Integration
-
-The tests are designed to run in CI/CD pipelines:
+Create `.github/workflows/test.yml`:
 
 ```yaml
-# Example GitHub Actions
-- name: Run Backend Tests
-  run: |
-    cd backend
-    pip install -r requirements.txt
-    pytest test_main.py -v
+name: Tests
+
+on: [push, pull_request]
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.9
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+      - name: Run tests
+        run: |
+          cd backend
+          python run_tests.py --no-coverage
+
+  frontend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: 18
+      - name: Install dependencies
+        run: npm install
+      - name: Run tests
+        run: npm run test:ci
 ```
 
-## 🎯 Test Quality
+## Debugging Tests
 
-- **Isolation**: Tests don't depend on each other
-- **Mocking**: No external dependencies
-- **Coverage**: All major functionality tested
-- **Realistic**: Uses real FHIR data structures
-- **Maintainable**: Clear test names and documentation
+### Backend Test Debugging
 
-## 🔄 Adding New Tests
+1. **Run with verbose output**:
+   ```bash
+   python run_tests.py --verbose
+   ```
 
-When adding new functionality:
+2. **Run specific failing test**:
+   ```bash
+   python run_tests.py --test TestCacheSystem::test_cache_basic_operations
+   ```
 
-1. **Add test class** for new feature
-2. **Mock external dependencies**
-3. **Test both success and error cases**
-4. **Update this documentation**
-5. **Run all tests** to ensure no regressions
+3. **Use pytest debugger**:
+   ```bash
+   pytest test_main_updated.py::TestCacheSystem::test_cache_basic_operations -s --pdb
+   ```
 
-Example:
-```python
-class TestNewFeature:
-    def test_new_feature_success(self):
-        # Test successful case
-        pass
-    
-    def test_new_feature_error(self):
-        # Test error case
-        pass
-```
+### Frontend Test Debugging
+
+1. **Run in watch mode**:
+   ```bash
+   npm test -- --watch
+   ```
+
+2. **Run with verbose output**:
+   ```bash
+   npm test -- --verbose
+   ```
+
+3. **Debug specific test**:
+   ```bash
+   npm test -- --testNamePattern="should render patient list"
+   ```
+
+## Common Issues and Solutions
+
+### Backend Test Issues
+
+1. **Import errors**: Make sure all new modules are properly imported
+2. **Database errors**: Tests use in-memory database, no file system access needed
+3. **Cache conflicts**: Each test resets the cache automatically
+4. **Rate limiter conflicts**: Each test resets the rate limiter automatically
+
+### Frontend Test Issues
+
+1. **Mock errors**: Ensure all API calls are properly mocked
+2. **Async test failures**: Use `waitFor` for async operations
+3. **Component rendering errors**: Check that all required props are provided
+4. **Hook testing errors**: Use `renderHook` for testing custom hooks
+
+## Best Practices
+
+### Writing Backend Tests
+
+1. **Use descriptive test names**: Clear, descriptive test method names
+2. **Test one thing at a time**: Each test should test one specific behavior
+3. **Use proper setup/teardown**: Reset state between tests
+4. **Mock external dependencies**: Don't rely on external services
+5. **Test error conditions**: Always test error handling
+
+### Writing Frontend Tests
+
+1. **Test user interactions**: Focus on user behavior, not implementation
+2. **Use realistic data**: Mock data should match real data structure
+3. **Test error states**: Always test error handling and loading states
+4. **Test accessibility**: Ensure components are accessible
+5. **Use proper assertions**: Use semantic assertions that match user expectations
+
+## Performance Considerations
+
+### Backend Test Performance
+
+- **In-memory database**: Fast database operations
+- **Short timeouts**: Quick test execution
+- **Minimal logging**: Reduced I/O overhead
+- **Parallel execution**: Tests can run in parallel
+
+### Frontend Test Performance
+
+- **Mocked API calls**: No network overhead
+- **Fast rendering**: Components render quickly
+- **Minimal DOM manipulation**: Focus on essential interactions
+- **Efficient assertions**: Use efficient DOM queries
+
+## Future Improvements
+
+1. **Integration tests**: Add end-to-end tests
+2. **Performance tests**: Add performance benchmarking
+3. **Security tests**: Add security vulnerability tests
+4. **Accessibility tests**: Add automated accessibility testing
+5. **Visual regression tests**: Add visual testing for UI components

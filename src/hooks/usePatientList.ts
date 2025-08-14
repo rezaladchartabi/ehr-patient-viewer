@@ -31,8 +31,10 @@ const getCacheKey = (cursor?: string, allowlist?: string[]) => {
   return `cursor:${cursor || 'initial'}`;
 };
 
+import config from '../config';
+
 // API base URL
-const API_BASE = process.env.REACT_APP_API_URL || 'https://ehr-backend-87r9.onrender.com';
+const API_BASE = config.api.baseUrl;
 
 // Allowlist IDs for specific patients (only real IDs from FHIR server)
 const ALLOWLIST_IDS = [
@@ -130,61 +132,32 @@ export const usePatientList = () => {
     try {
       let processedPatients: Patient[] = [];
       
-      // Try allowlist first if we have IDs and allowlist is enabled
-      if (ALLOWLIST_IDS.length > 0 && USE_ALLOWLIST) {
-        try {
-          const url = `${API_BASE}/local/patients/by-ids?ids=${ALLOWLIST_IDS.join(',')}`;
-          const res = await fetch(url);
-          if (res.ok) {
-            const data = await res.json();
-            processedPatients = data.patients ? data.patients.map((patient: any) => ({
-              id: patient.id,
-              family_name: patient.family_name || 'Unknown',
-              gender: patient.gender || 'Unknown',
-              birth_date: patient.birth_date || 'Unknown',
-              race: patient.race,
-              ethnicity: patient.ethnicity,
-              birth_sex: patient.birth_sex,
-              identifier: patient.identifier,
-              marital_status: patient.marital_status,
-              deceased_date: patient.deceased_date,
-              managing_organization: patient.managing_organization,
-              allergies: patient.allergies || []
-            })) : [];
-          }
-        } catch (allowlistError) {
-          console.warn('Allowlist fetch failed, falling back to regular patient fetch:', allowlistError);
-        }
+      // Use the working /local/patients endpoint
+      const url = `${API_BASE}/local/patients?limit=${PATIENTS_PER_PAGE}&offset=0`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        throw new Error(`HTTP error! status: ${res.status}`);
       }
-      
-      // If allowlist failed or is empty, fetch regular patients
-      if (processedPatients.length === 0) {
-        const url = `${API_BASE}/local/patients?limit=${PATIENTS_PER_PAGE}&offset=0`;
-        const res = await fetch(url);
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-        const data = await res.json();
+      const data = await res.json();
 
-        processedPatients = data.patients ? data.patients.map((patient: any) => ({
-          id: patient.id,
-          family_name: patient.family_name || 'Unknown',
-          gender: patient.gender || 'Unknown',
-          birth_date: patient.birth_date || 'Unknown',
-          race: patient.race,
-          ethnicity: patient.ethnicity,
-          birth_sex: patient.birth_sex,
-          identifier: patient.identifier,
-          marital_status: patient.marital_status,
-          deceased_date: patient.deceased_date,
-          managing_organization: patient.managing_organization,
-          allergies: patient.allergies || []
-        })) : [];
+      processedPatients = data.patients ? data.patients.map((patient: any) => ({
+        id: patient.id,
+        family_name: patient.family_name || 'Unknown',
+        gender: patient.gender || 'Unknown',
+        birth_date: patient.birth_date || 'Unknown',
+        race: patient.race,
+        ethnicity: patient.ethnicity,
+        birth_sex: patient.birth_sex,
+        identifier: patient.identifier,
+        marital_status: patient.marital_status,
+        deceased_date: patient.deceased_date,
+        managing_organization: patient.managing_organization,
+        allergies: patient.allergies || []
+      })) : [];
 
-        // Set next page cursor for pagination
-        if (data.total_count > PATIENTS_PER_PAGE) {
-          setNextPageCursor('1'); // Simple offset-based pagination
-        }
+      // Set next page cursor for pagination
+      if (data.total_count > PATIENTS_PER_PAGE) {
+        setNextPageCursor('1'); // Simple offset-based pagination
       }
 
       // Cache the data

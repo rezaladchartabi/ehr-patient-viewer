@@ -232,8 +232,10 @@ const getCacheKey = (patientId: string, encounterId?: string, resourceType?: str
   return `${patientId}:${encounterId || 'all'}:${resourceType || 'all'}`;
 };
 
+import config from '../config';
+
 // API base URL
-const API_BASE = process.env.REACT_APP_API_URL || 'https://ehr-backend-87r9.onrender.com';
+const API_BASE = config.api.baseUrl;
 
 export const usePatientData = () => {
   const [loading, setLoading] = useState(false);

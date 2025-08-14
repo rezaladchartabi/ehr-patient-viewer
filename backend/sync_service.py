@@ -4,7 +4,11 @@ import time
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
 import logging
-from local_db import LocalDatabase
+try:
+    from local_db import LocalDatabase
+except ImportError:
+    # When imported as a package (e.g., uvicorn backend.main:app)
+    from backend.local_db import LocalDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +139,10 @@ class SyncService:
             return self._process_patient(resource)
         elif resource_type == 'AllergyIntolerance':
             return self._process_allergy(resource)
+        elif resource_type == 'Condition':
+            return self._process_condition(resource)
+        elif resource_type == 'Encounter':
+            return self._process_encounter(resource)
         # Add other resource processors as needed
         return None
     
@@ -175,6 +183,44 @@ class SyncService:
             'asserter': resource.get('asserter', {}).get('display') if resource.get('asserter') else None,
             'last_occurrence': resource.get('lastOccurrence'),
             'note': resource.get('note', [{}])[0].get('text') if resource.get('note') else None,
+            'last_updated': resource.get('meta', {}).get('lastUpdated'),
+            'version_id': resource.get('meta', {}).get('versionId')
+        }
+    
+    def _process_condition(self, resource: Dict[str, Any]) -> Dict[str, Any]:
+        """Process Condition resource"""
+        return {
+            'id': resource.get('id'),
+            'patient_id': resource.get('subject', {}).get('reference', '').split('/')[-1] if resource.get('subject') else None,
+            'code': resource.get('code', {}).get('coding', [{}])[0].get('code') if resource.get('code') else None,
+            'code_display': resource.get('code', {}).get('text') or resource.get('code', {}).get('coding', [{}])[0].get('display') if resource.get('code') else None,
+            'code_system': resource.get('code', {}).get('coding', [{}])[0].get('system') if resource.get('code') else None,
+            'category': resource.get('category', [{}])[0].get('coding', [{}])[0].get('display') if resource.get('category') else None,
+            'clinical_status': resource.get('clinicalStatus', {}).get('coding', [{}])[0].get('code') if resource.get('clinicalStatus') else None,
+            'verification_status': resource.get('verificationStatus', {}).get('coding', [{}])[0].get('code') if resource.get('verificationStatus') else None,
+            'severity': resource.get('severity', {}).get('coding', [{}])[0].get('display') if resource.get('severity') else None,
+            'onset_date': resource.get('onsetDateTime') or resource.get('onsetString'),
+            'recorded_date': resource.get('recordedDate'),
+            'recorder': resource.get('recorder', {}).get('display') if resource.get('recorder') else None,
+            'asserter': resource.get('asserter', {}).get('display') if resource.get('asserter') else None,
+            'note': resource.get('note', [{}])[0].get('text') if resource.get('note') else None,
+            'last_updated': resource.get('meta', {}).get('lastUpdated'),
+            'version_id': resource.get('meta', {}).get('versionId')
+        }
+    
+    def _process_encounter(self, resource: Dict[str, Any]) -> Dict[str, Any]:
+        """Process Encounter resource"""
+        return {
+            'id': resource.get('id'),
+            'patient_id': resource.get('subject', {}).get('reference', '').split('/')[-1] if resource.get('subject') else None,
+            'status': resource.get('status'),
+            'class': resource.get('class', {}).get('code') if resource.get('class') else None,
+            'type': resource.get('type', [{}])[0].get('coding', [{}])[0].get('display') if resource.get('type') else None,
+            'subject': resource.get('subject', {}).get('reference') if resource.get('subject') else None,
+            'start_date': resource.get('period', {}).get('start') if resource.get('period') else None,
+            'end_date': resource.get('period', {}).get('end') if resource.get('period') else None,
+            'location': resource.get('location', [{}])[0].get('location', {}).get('display') if resource.get('location') else None,
+            'service_provider': resource.get('serviceProvider', {}).get('display') if resource.get('serviceProvider') else None,
             'last_updated': resource.get('meta', {}).get('lastUpdated'),
             'version_id': resource.get('meta', {}).get('versionId')
         }
@@ -233,18 +279,17 @@ class SyncService:
         
         for patient_id in patient_ids:
             try:
-                # Use the /Patient/by-ids endpoint which we know works
+                # Fetch Patient by _id (standard FHIR)
                 if self.fetch_from_fhir:
-                    patient_data = await self.fetch_from_fhir("/Patient/by-ids", {'ids': patient_id})
+                    patient_data = await self.fetch_from_fhir("/Patient", {'_id': patient_id, '_count': 1})
                 else:
-                    # Fallback to direct HTTP call
                     async with httpx.AsyncClient(timeout=30.0) as client:
-                        url = f"{self.fhir_base_url}/Patient/by-ids?ids={patient_id}"
-                        response = await client.get(url)
+                        url = f"{self.fhir_base_url}/Patient"
+                        response = await client.get(url, params={"_id": patient_id, "_count": 1})
                         response.raise_for_status()
                         patient_data = response.json()
                 
-                if patient_data and 'entry' and len(patient_data['entry']) > 0:
+                if patient_data and 'entry' in patient_data and len(patient_data['entry']) > 0:
                     patient_resource = patient_data['entry'][0]['resource']
                     processed_patient = self._process_patient(patient_resource)
                     self.local_db.upsert_patient(processed_patient)
@@ -266,12 +311,16 @@ class SyncService:
                                 response.raise_for_status()
                                 resource_data = response.json()
                         
-                        if resource_data and 'entry':
+                        if resource_data and 'entry' in resource_data:
                             for entry in resource_data['entry']:
                                 processed_resource = self._process_resource(resource_type, entry['resource'])
                                 if processed_resource:
                                     if resource_type == 'AllergyIntolerance':
                                         self.local_db.upsert_allergy(processed_resource)
+                                    elif resource_type == 'Condition':
+                                        self.local_db.upsert_condition(processed_resource)
+                                    elif resource_type == 'Encounter':
+                                        self.local_db.upsert_encounter(processed_resource)
                                     # Add other resource types as needed
                     except Exception as resource_error:
                         # Log but don't fail the entire sync for resource errors

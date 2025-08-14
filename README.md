@@ -1,200 +1,402 @@
-# EHR Patient Viewer System
+# EHR Patient Viewer
 
-A comprehensive Electronic Health Record (EHR) system built with React and FastAPI, designed to display and manage patient data from MIMIC-IV datasets.
+A modern Electronic Health Record (EHR) patient viewer application with FHIR (Fast Healthcare Interoperability Resources) integration. Built with React, TypeScript, and FastAPI.
 
-## 🏥 Features
+## Features
 
-- **Complete Patient Data View**: Display all patient information including demographics, conditions, medications, encounters, and more
-- **Multi-Data Type Support**: 
-  - Patients (20 records)
-  - Conditions (1,320 records)
-  - Medications (3,603 records)
-  - Encounters (179 records)
-  - Medication Administrations (16,367 records)
-  - Medication Requests (4,656 records)
-  - Observations (81,868 records)
-  - Procedures (714 records)
-  - Specimens (3,585 records)
-- **Modern UI**: Clean, responsive interface with tabbed navigation
-- **Real-time Data**: Live API integration with comprehensive backend
-- **Search & Filter**: Easy patient selection and data browsing
+- **Patient Management**: View and search patient records with pagination
+- **FHIR Integration**: Seamless integration with FHIR-compliant healthcare systems
+- **Local Caching**: Intelligent caching system for improved performance
+- **Real-time Sync**: Automatic synchronization with remote FHIR servers
+- **Responsive UI**: Modern, accessible interface with dark/light theme support
+- **Error Handling**: Comprehensive error handling and recovery mechanisms
+- **Performance Monitoring**: Built-in performance metrics and monitoring
 
-## 🚀 Quick Start
+## Architecture
 
-### Prerequisites
-- Node.js (v14 or higher)
+### Backend (FastAPI)
+- **FastAPI**: Modern, fast web framework for building APIs
+- **SQLite**: Local database for caching FHIR resources
+- **Connection Pooling**: Efficient database connection management
+- **Rate Limiting**: Request rate limiting and monitoring
+- **Caching**: Multi-level caching system with LRU eviction
+- **Error Handling**: Centralized exception handling and logging
+
+### Frontend (React + TypeScript)
+- **React 19**: Latest React with concurrent features
+- **TypeScript**: Full type safety and better developer experience
+- **Tailwind CSS**: Utility-first CSS framework for styling
+- **Error Boundaries**: Comprehensive error handling
+- **Custom Hooks**: Reusable logic for data fetching and state management
+
+## Prerequisites
+
+- Node.js 18+ and npm 8+
 - Python 3.8+
-- Git
+- SQLite 3
 
-### Local Development
+## Installation
 
-1. **Clone the repository**
+### 1. Clone the repository
 ```bash
-git clone <your-repo-url>
+git clone https://github.com/your-org/ehr-ui.git
 cd ehr-ui
 ```
 
-2. **Install dependencies**
+### 2. Backend Setup
 ```bash
-npm install
+# Navigate to backend directory
+cd backend
+
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# On Windows:
+venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Initialize the database
+python init_local_db.py
 ```
 
-3. **Start the development server**
+### 3. Frontend Setup
+```bash
+# Navigate to project root
+cd ..
+
+# Install dependencies
+npm install
+
+# Create environment file
+cp .env.example .env.local
+```
+
+### 4. Environment Configuration
+Create a `.env.local` file in the project root:
+```env
+# API Configuration
+REACT_APP_API_URL=http://localhost:8005
+
+# Development
+REACT_APP_ENV=development
+```
+
+**Note**: To change the backend server address, you can either:
+1. Update the `REACT_APP_API_URL` in your `.env.local` file
+2. Use the provided script: `./scripts/update-backend-url.sh <new-url>`
+3. Update the default URL in `src/config.ts`
+
+## Usage
+
+### Development
+
+1. **Start the backend server**:
+```bash
+cd backend
+uvicorn main:app --host 127.0.0.1 --port 8005 --reload
+```
+
+2. **Start the frontend development server**:
 ```bash
 npm start
 ```
 
-4. **Start the backend API** (in a separate terminal)
+3. **Open your browser** and navigate to `http://localhost:3000`
+
+### Production
+
+1. **Build the frontend**:
+```bash
+npm run build
+```
+
+2. **Start the backend in production mode**:
 ```bash
 cd backend
-pip install -r requirements.txt
-python main.py
+uvicorn main:app --host 0.0.0.0 --port 8005
 ```
 
-5. **Access the application**
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8002
+## API Endpoints
 
-## 📊 Data Overview
+### Health and Status
+- `GET /` - Health check and system status
+- `GET /cache/status` - Cache statistics
+- `GET /rate-limit/status` - Rate limiting statistics
 
-The system includes comprehensive MIMIC-IV data:
+### Local Database
+- `GET /local/patients` - Get paginated patient list
+- `GET /local/patients/{id}` - Get specific patient with allergies
+- `GET /local/patients/search` - Search patients
 
-| Data Type | Records | Description |
-|-----------|---------|-------------|
-| Patients | 20 | Patient demographics and basic info |
-| Conditions | 1,320 | Medical conditions and diagnoses |
-| Medications | 3,603 | Prescribed medications |
-| Encounters | 179 | Hospital visits and encounters |
-| Med Admin | 16,367 | Medication administration records |
-| Med Requests | 4,656 | Medication prescription requests |
-| Observations | 81,868 | Lab results and clinical observations |
-| Procedures | 714 | Medical procedures performed |
-| Specimens | 3,585 | Lab specimens collected |
+### FHIR Proxy
+- `GET /Patient` - FHIR Patient resources
+- `GET /Encounter` - FHIR Encounter resources
+- `GET /Condition` - FHIR Condition resources
+- `GET /AllergyIntolerance` - FHIR Allergy resources
 
-## 🏗️ Architecture
+### Encounter Data
+- `GET /encounter/medications` - Get medications for encounter
+- `GET /encounter/observations` - Get observations for encounter
+- `GET /encounter/procedures` - Get procedures for encounter
+- `GET /encounter/specimens` - Get specimens for encounter
 
-### Frontend (React)
-- **Framework**: React 18 with TypeScript
-- **Styling**: Inline styles with modern CSS Grid/Flexbox
-- **State Management**: React Hooks (useState, useEffect)
-- **API Integration**: Fetch API for backend communication
+### Synchronization
+- `POST /sync/all` - Sync all FHIR resources
+- `POST /sync/patients` - Sync specific patients
 
-### Backend (FastAPI)
-- **Framework**: FastAPI with Python 3.11
-- **Database**: SQLite with comprehensive schema
-- **API**: RESTful endpoints for all data types
-- **CORS**: Configured for cross-origin requests
+## Configuration
 
-### Database Schema
-- **Patient**: Core patient information
-- **Condition**: Medical conditions and diagnoses
-- **Medication**: Prescribed medications
-- **Encounter**: Hospital visits and encounters
-- **Medication_Administration**: Medication administration records
-- **Medication_Request**: Medication prescription requests
-- **Observation**: Lab results and clinical observations
-- **Procedure**: Medical procedures
-- **Specimen**: Lab specimens
+### Frontend Configuration
+The frontend uses a centralized configuration system. Key files:
 
-## 🌐 Deployment
+- **`src/config.ts`**: Main configuration file with all settings
+- **`.env.local`**: Environment-specific configuration (not committed to git)
+- **`scripts/update-backend-url.sh`**: Script to update backend URL across the project
 
-### Quick Deployment
-Run the deployment script:
+#### Changing Backend URL
+
+**Option 1: Environment Variable (Recommended)**
 ```bash
-./deploy.sh
+# Create or update .env.local
+echo "REACT_APP_API_URL=https://your-new-backend.com" > .env.local
 ```
 
-### Manual Deployment
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for detailed deployment instructions.
-
-### Recommended Platforms
-- **Free**: Render, Railway, Netlify, Vercel
-- **Paid**: DigitalOcean, Heroku, AWS
-
-## 🔧 Configuration
-
-### Environment Variables
-- `REACT_APP_API_URL`: Backend API URL (default: http://localhost:8002)
-
-### API Endpoints
-- `GET /patients` - List all patients
-- `GET /patients/{id}` - Get specific patient
-- `GET /patients/{id}/summary` - Patient dashboard
-- `GET /patients/{id}/{data-type}` - Patient-specific data
-- `GET /{data-type}` - List all records of a type
-
-## 🔒 Security
-
-For production deployment:
-1. Add authentication to the API
-2. Restrict CORS origins
-3. Use environment variables for sensitive data
-4. Implement rate limiting
-5. Add HTTPS encryption
-
-## 📱 Usage
-
-1. **Select a Patient**: Click on any patient from the left sidebar
-2. **View Summary**: See the patient overview with data counts
-3. **Explore Data**: Use the tabs to navigate between different data types
-4. **Browse Records**: View detailed information for each record type
-
-## 🛠️ Development
-
-### Project Structure
-```
-ehr-ui/
-├── src/
-│   ├── App.tsx          # Main application component
-│   ├── index.tsx        # Application entry point
-│   └── ...
-├── backend/
-│   ├── main.py          # FastAPI application
-│   ├── requirements.txt # Python dependencies
-│   └── ehr_data.sqlite3 # Database file
-├── public/              # Static assets
-├── package.json         # Node.js dependencies
-└── README.md           # This file
+**Option 2: Using the Script**
+```bash
+# Update URL across all files
+./scripts/update-backend-url.sh https://your-new-backend.com
 ```
 
-### Adding New Features
-1. **New Data Type**: Add interface, state, and API calls in App.tsx
-2. **New Endpoint**: Add route in backend/main.py
-3. **UI Enhancement**: Modify components in src/
+**Option 3: Manual Update**
+```typescript
+// Update src/config.ts
+export const config = {
+  api: {
+    baseUrl: 'https://your-new-backend.com',
+    // ... other settings
+  }
+};
+```
 
-## 🤝 Contributing
+### Backend Configuration
+The backend uses environment variables for configuration. Key settings:
+
+```env
+# FHIR Server
+FHIR_BASE_URL=https://imagination-promptly-subsequent-truck.trycloudflare.com/fhir
+
+# Database
+DB_PATH=local_ehr.db
+DB_MAX_CONNECTIONS=20
+
+# Cache
+CACHE_TTL=300
+CACHE_MAX_SIZE=2000
+
+# Rate Limiting
+RATE_LIMIT_MAX=100
+RATE_LIMIT_WINDOW=60
+
+# Logging
+LOG_LEVEL=INFO
+```
+
+### Frontend Configuration
+Frontend configuration is handled through environment variables:
+
+```env
+# API Configuration
+REACT_APP_API_URL=http://localhost:8005
+
+# Feature Flags
+REACT_APP_ENABLE_CACHE=true
+REACT_APP_ENABLE_RATE_LIMITING=true
+```
+
+## Testing
+
+### Backend Tests
+```bash
+cd backend
+
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=.
+
+# Run specific test file
+pytest test_main.py
+
+# Run with verbose output
+pytest -v
+```
+
+### Frontend Tests
+```bash
+# Run all tests
+npm test
+
+# Run with coverage
+npm run test:coverage
+
+# Run tests in CI mode
+npm run test:ci
+```
+
+## Code Quality
+
+### Backend
+```bash
+cd backend
+
+# Type checking
+mypy .
+
+# Linting
+flake8 .
+
+# Format code
+black .
+```
+
+### Frontend
+```bash
+# Type checking
+npm run type-check
+
+# Linting
+npm run lint
+
+# Fix linting issues
+npm run lint:fix
+
+# Format code
+npm run format
+
+# Check formatting
+npm run format:check
+```
+
+## Performance Monitoring
+
+The application includes built-in performance monitoring:
+
+### Backend Metrics
+- Database query performance
+- Cache hit/miss rates
+- HTTP request statistics
+- Rate limiting metrics
+
+### Frontend Metrics
+- Bundle size analysis
+- Component render performance
+- API request timing
+- Error tracking
+
+## Error Handling
+
+### Backend Error Handling
+- Custom exception classes
+- Centralized error handling
+- Detailed error logging
+- Graceful degradation
+
+### Frontend Error Handling
+- Error boundaries for component errors
+- API error handling with retry logic
+- User-friendly error messages
+- Development error details
+
+## Security
+
+- Rate limiting to prevent abuse
+- Input validation and sanitization
+- CORS configuration
+- Secure HTTP headers
+- Environment-based configuration
+
+## Deployment
+
+### Docker Deployment
+```bash
+# Build the image
+docker build -t ehr-ui .
+
+# Run the container
+docker run -p 8005:8005 ehr-ui
+```
+
+### Render Deployment
+The application includes `render.yaml` for easy deployment on Render:
+
+```yaml
+services:
+  - type: web
+    name: ehr-backend
+    env: python
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+```
+
+## Contributing
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## 📄 License
+### Development Guidelines
+- Follow TypeScript best practices
+- Write comprehensive tests
+- Use meaningful commit messages
+- Update documentation as needed
+- Follow the existing code style
 
-This project is for educational and research purposes. Please ensure compliance with data privacy regulations when using with real patient data.
+## Troubleshooting
 
-## 🆘 Support
+### Common Issues
 
-For issues and questions:
-1. Check the deployment logs
-2. Verify environment variables
-3. Test API endpoints directly
-4. Review browser console for errors
+1. **Backend won't start**
+   - Check if port 8005 is available
+   - Verify Python dependencies are installed
+   - Check environment variables
 
-## 🎯 Roadmap
+2. **Frontend can't connect to backend**
+   - Verify backend is running on correct port
+   - Check CORS configuration
+   - Verify API URL in environment
 
-- [ ] Add authentication system
-- [ ] Implement search and filtering
-- [ ] Add data visualization charts
-- [ ] Create mobile-responsive design
-- [ ] Add data export functionality
-- [ ] Implement real-time updates
-- [ ] Add audit logging
-- [ ] Create admin dashboard
+3. **Database errors**
+   - Check database file permissions
+   - Verify SQLite is installed
+   - Run database initialization script
 
----
+4. **Performance issues**
+   - Check cache configuration
+   - Monitor database query performance
+   - Verify rate limiting settings
 
-**Built with ❤️ for healthcare professionals**
+## License
 
-# Test commit
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support
+
+For support and questions:
+- Create an issue on GitHub
+- Check the troubleshooting section
+- Review the API documentation
+
+## Acknowledgments
+
+- FHIR community for healthcare standards
+- FastAPI team for the excellent web framework
+- React team for the amazing frontend library
+- All contributors to this project

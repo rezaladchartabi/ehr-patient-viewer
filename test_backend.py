@@ -7,7 +7,7 @@ import json
 import time
 
 # Test configuration
-BACKEND_URL = "https://ehr-backend-87r9.onrender.com"
+BACKEND_URL = "http://localhost:8005"  # Change this to your new backend URL
 FHIR_URL = "https://gel-landscapes-impaired-vitamin.trycloudflare.com/fhir"
 
 def test_backend_health():

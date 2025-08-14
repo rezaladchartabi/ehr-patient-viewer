@@ -413,6 +413,74 @@ class LocalDatabase:
             conn.commit()
             return True
     
+    def upsert_condition(self, condition_data: Dict[str, Any]) -> bool:
+        """Insert or update a condition record, returns True if changed"""
+        hash_value = self.calculate_hash(condition_data)
+        
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT hash FROM conditions WHERE id = ?",
+                (condition_data['id'],)
+            )
+            existing = cursor.fetchone()
+            
+            if existing and existing[0] == hash_value:
+                return False  # No change
+            
+            conn.execute("""
+                INSERT OR REPLACE INTO conditions (
+                    id, patient_id, code, code_display, code_system, category,
+                    status, last_updated, version_id, hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                condition_data['id'],
+                condition_data.get('patient_id'),
+                condition_data.get('code'),
+                condition_data.get('code_display'),
+                condition_data.get('code_system'),
+                condition_data.get('category'),
+                condition_data.get('clinical_status'),  # Map to status column
+                condition_data.get('last_updated'),
+                condition_data.get('version_id'),
+                hash_value
+            ))
+            conn.commit()
+            return True
+    
+    def upsert_encounter(self, encounter_data: Dict[str, Any]) -> bool:
+        """Insert or update an encounter record, returns True if changed"""
+        hash_value = self.calculate_hash(encounter_data)
+        
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT hash FROM encounters WHERE id = ?",
+                (encounter_data['id'],)
+            )
+            existing = cursor.fetchone()
+            
+            if existing and existing[0] == hash_value:
+                return False  # No change
+            
+            conn.execute("""
+                INSERT OR REPLACE INTO encounters (
+                    id, patient_id, status, class_code, encounter_type, start_date, end_date,
+                    last_updated, version_id, hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                encounter_data['id'],
+                encounter_data.get('patient_id'),
+                encounter_data.get('status'),
+                encounter_data.get('class'),  # Map to class_code column
+                encounter_data.get('type'),   # Map to encounter_type column
+                encounter_data.get('start_date'),
+                encounter_data.get('end_date'),
+                encounter_data.get('last_updated'),
+                encounter_data.get('version_id'),
+                hash_value
+            ))
+            conn.commit()
+            return True
+    
     def get_patient_with_allergies(self, patient_id: str) -> Optional[Dict[str, Any]]:
         """Get a patient with their allergies"""
         with sqlite3.connect(self.db_path) as conn:
@@ -426,6 +494,10 @@ class LocalDatabase:
             if not patient_row:
                 return None
             
+            # Get patient column names
+            patient_columns = [col[0] for col in cursor.description]
+            patient = dict(zip(patient_columns, patient_row))
+            
             # Get allergies
             cursor = conn.execute(
                 "SELECT * FROM allergies WHERE patient_id = ?",
@@ -433,9 +505,9 @@ class LocalDatabase:
             )
             allergy_rows = cursor.fetchall()
             
-            # Convert to dict
-            patient = dict(zip([col[0] for col in cursor.description], patient_row))
-            allergies = [dict(zip([col[0] for col in cursor.description], row)) for row in allergy_rows]
+            # Get allergy column names
+            allergy_columns = [col[0] for col in cursor.description]
+            allergies = [dict(zip(allergy_columns, row)) for row in allergy_rows]
             
             patient['allergies'] = allergies
             return patient
