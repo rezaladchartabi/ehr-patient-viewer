@@ -23,7 +23,7 @@ services:
       - key: REACT_APP_API_URL
         value: https://ehr-backend-87r9.onrender.com  # Your Render backend URL
       - key: PUBLIC_URL
-        value: .
+        value: /
       - key: DISABLE_ESLINT_PLUGIN
         value: true
       - key: CI
