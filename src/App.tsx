@@ -132,6 +132,144 @@ function App() {
     });
   };
 
+  // Format different resource types for display
+  const formatResource = (item: any, resourceType: string) => {
+    const resource = item.resource;
+    
+    switch (resourceType) {
+      case 'conditions':
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.code?.text || resource.code?.coding?.[0]?.display || 'Unknown Condition'}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.clinicalStatus?.coding?.[0]?.code || 'Unknown'}</span>
+              <span className="detail-item">Category: {resource.category?.[0]?.coding?.[0]?.display || 'N/A'}</span>
+              <span className="detail-item">Recorded: {resource.recordedDate || 'N/A'}</span>
+              {resource.code?.coding?.[0]?.code && (
+                <span className="detail-item">Code: {resource.code.coding[0].code}</span>
+              )}
+            </div>
+          </div>
+        );
+        
+      case 'medicationRequests':
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.medicationCodeableConcept?.text || 
+               resource.medicationCodeableConcept?.coding?.[0]?.display ||
+               resource.medicationReference?.display || 'Unknown Medication'}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
+              <span className="detail-item">Intent: {resource.intent || 'N/A'}</span>
+              <span className="detail-item">Authored: {resource.authoredOn || 'N/A'}</span>
+              {resource.dosageInstruction?.[0]?.text && (
+                <span className="detail-item">Dosage: {resource.dosageInstruction[0].text}</span>
+              )}
+            </div>
+          </div>
+        );
+        
+      case 'medicationAdministrations':
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.medicationCodeableConcept?.text || 
+               resource.medicationCodeableConcept?.coding?.[0]?.display ||
+               resource.medicationReference?.display || 'Unknown Medication'}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
+              <span className="detail-item">Effective: {resource.effectiveDateTime || resource.effectivePeriod?.start || 'N/A'}</span>
+              {resource.dosage?.dose?.value && (
+                <span className="detail-item">Dose: {resource.dosage.dose.value} {resource.dosage.dose.unit}</span>
+              )}
+              {resource.dosage?.route?.coding?.[0]?.display && (
+                <span className="detail-item">Route: {resource.dosage.route.coding[0].display}</span>
+              )}
+            </div>
+          </div>
+        );
+        
+      case 'observations':
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.code?.text || resource.code?.coding?.[0]?.display || 'Unknown Observation'}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
+              <span className="detail-item">Effective: {resource.effectiveDateTime || 'N/A'}</span>
+              {resource.valueQuantity && (
+                <span className="detail-item">Value: {resource.valueQuantity.value} {resource.valueQuantity.unit}</span>
+              )}
+              {resource.valueString && (
+                <span className="detail-item">Value: {resource.valueString}</span>
+              )}
+              {resource.valueCodeableConcept?.text && (
+                <span className="detail-item">Value: {resource.valueCodeableConcept.text}</span>
+              )}
+            </div>
+          </div>
+        );
+        
+      case 'specimens':
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.type?.text || resource.type?.coding?.[0]?.display || 'Unknown Specimen'}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
+              <span className="detail-item">Collected: {resource.collection?.collectedDateTime || 'N/A'}</span>
+              {resource.collection?.bodySite?.text && (
+                <span className="detail-item">Body Site: {resource.collection.bodySite.text}</span>
+              )}
+              {resource.collection?.method?.text && (
+                <span className="detail-item">Method: {resource.collection.method.text}</span>
+              )}
+            </div>
+          </div>
+        );
+        
+      case 'medicationDispenses':
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.medicationCodeableConcept?.text || 
+               resource.medicationCodeableConcept?.coding?.[0]?.display ||
+               resource.medicationReference?.display || 'Unknown Medication'}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
+              <span className="detail-item">Dispensed: {resource.whenHandedOver || resource.whenPrepared || 'N/A'}</span>
+              {resource.quantity?.value && (
+                <span className="detail-item">Quantity: {resource.quantity.value} {resource.quantity.unit}</span>
+              )}
+              {resource.daysSupply?.value && (
+                <span className="detail-item">Days Supply: {resource.daysSupply.value}</span>
+              )}
+            </div>
+          </div>
+        );
+        
+      default:
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.resourceType} - {resource.id}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'N/A'}</span>
+            </div>
+          </div>
+        );
+    }
+  };
+
   const renderResourceTab = (tabName: string, resources: any[], resourceType: string) => {
     if (activeTab !== tabName) return null;
     
@@ -146,12 +284,10 @@ function App() {
     return (
       <div className="p-4">
         <h3 className="font-semibold mb-3">{tabName} ({filteredResources.length})</h3>
-        <div className="space-y-2">
+        <div className="resource-list">
           {filteredResources.map((item, idx) => (
-            <div key={idx} className="border rounded p-3 bg-gray-50">
-              <pre className="text-sm overflow-auto">
-                {JSON.stringify(item.resource, null, 2)}
-              </pre>
+            <div key={idx} className="mb-3">
+              {formatResource(item, resourceType)}
             </div>
           ))}
         </div>
@@ -244,12 +380,12 @@ function App() {
 
             {/* Tab Content */}
             <div className="flex-1 overflow-y-auto">
-              {renderResourceTab('conditions', resourceData.conditions, 'Condition')}
-              {renderResourceTab('medicationAdministrations', resourceData.medicationAdministrations, 'MedicationAdministration')}
-              {renderResourceTab('observations', resourceData.observations, 'Observation')}
-              {renderResourceTab('medicationRequests', resourceData.medicationRequests, 'MedicationRequest')}
-              {renderResourceTab('specimens', resourceData.specimens, 'Specimen')}
-              {renderResourceTab('medicationDispenses', resourceData.medicationDispenses, 'MedicationDispense')}
+              {renderResourceTab('conditions', resourceData.conditions, 'conditions')}
+              {renderResourceTab('medicationAdministrations', resourceData.medicationAdministrations, 'medicationAdministrations')}
+              {renderResourceTab('observations', resourceData.observations, 'observations')}
+              {renderResourceTab('medicationRequests', resourceData.medicationRequests, 'medicationRequests')}
+              {renderResourceTab('specimens', resourceData.specimens, 'specimens')}
+              {renderResourceTab('medicationDispenses', resourceData.medicationDispenses, 'medicationDispenses')}
             </div>
           </>
         ) : (
