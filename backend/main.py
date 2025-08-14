@@ -2061,6 +2061,50 @@ async def get_patient_allergies_by_fhir_id(patient_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get patient allergies: {str(e)}")
 
+@app.post("/allergies/bulk-upload")
+async def bulk_upload_allergies(request: Request):
+    """Bulk upload allergy data to the database"""
+    try:
+        if not local_db:
+            raise HTTPException(status_code=500, detail="Local database not available")
+        
+        data = await request.json()
+        patient_allergies = data.get('patient_allergies', {})
+        
+        success_count = 0
+        error_count = 0
+        
+        for subject_id, allergies in patient_allergies.items():
+            for allergy in allergies:
+                allergy_name = allergy.get('allergy_name')
+                source_note_id = allergy.get('source_note_id')
+                chart_time = allergy.get('chart_time')
+                
+                if allergy_name and source_note_id:
+                    success = local_db.upsert_clinical_allergy(
+                        subject_id=subject_id,
+                        allergy_name=allergy_name,
+                        source_note_id=source_note_id,
+                        chart_time=chart_time
+                    )
+                    
+                    if success:
+                        success_count += 1
+                    else:
+                        error_count += 1
+                else:
+                    error_count += 1
+        
+        return {
+            "message": "Bulk upload completed",
+            "success_count": success_count,
+            "error_count": error_count,
+            "total_processed": success_count + error_count
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to bulk upload allergies: {str(e)}")
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
