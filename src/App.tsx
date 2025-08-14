@@ -160,6 +160,7 @@ function App() {
             <div className="resource-title">
               {resource.medicationCodeableConcept?.text || 
                resource.medicationCodeableConcept?.coding?.[0]?.display ||
+               resource.medicationCodeableConcept?.coding?.[0]?.code ||
                resource.medicationReference?.display || 'Unknown Medication'}
             </div>
             <div className="resource-details">
@@ -179,11 +180,15 @@ function App() {
             <div className="resource-title">
               {resource.medicationCodeableConcept?.text || 
                resource.medicationCodeableConcept?.coding?.[0]?.display ||
+               resource.medicationCodeableConcept?.coding?.[0]?.code ||
                resource.medicationReference?.display || 'Unknown Medication'}
             </div>
             <div className="resource-details">
               <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
               <span className="detail-item">Effective: {resource.effectiveDateTime || resource.effectivePeriod?.start || 'N/A'}</span>
+              {resource.medicationCodeableConcept?.coding?.[0]?.code && (
+                <span className="detail-item">Code: {resource.medicationCodeableConcept.coding[0].code}</span>
+              )}
               {resource.dosage?.dose?.value && (
                 <span className="detail-item">Dose: {resource.dosage.dose.value} {resource.dosage.dose.unit}</span>
               )}
@@ -241,6 +246,7 @@ function App() {
             <div className="resource-title">
               {resource.medicationCodeableConcept?.text || 
                resource.medicationCodeableConcept?.coding?.[0]?.display ||
+               resource.medicationCodeableConcept?.coding?.[0]?.code ||
                resource.medicationReference?.display || 'Unknown Medication'}
             </div>
             <div className="resource-details">
