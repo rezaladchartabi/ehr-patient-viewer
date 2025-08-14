@@ -347,16 +347,45 @@ async def _fetch_all_pages(path: str, params: Dict[str, Any]) -> List[Dict]:
     return entries
 
 def _map_med_req(res: Dict[str, Any]) -> Dict[str, Any]:
-    c = (res.get("medicationCodeableConcept") or {}).get("coding") or [{}]
-    coding = c[0]
+    # Handle both medicationCodeableConcept and medicationReference
+    medication_code = ''
+    medication_display = 'Unknown Medication'
+    medication_system = ''
+    medication_codeable_concept = None
+    
+    if res.get("medicationCodeableConcept"):
+        # Direct medicationCodeableConcept - prioritize code field as per user example
+        medication_codeable_concept = res["medicationCodeableConcept"]
+        c = medication_codeable_concept.get("coding") or [{}]
+        coding = c[0] if c else {}
+        medication_code = coding.get("code", '')
+        medication_display = (medication_codeable_concept.get("text") or 
+                            coding.get("display") or 
+                            coding.get("code") or  # This should capture "Morphine Sulfate" etc.
+                            'Unknown Medication')
+        medication_system = coding.get("system", '')
+    elif res.get("medicationReference"):
+        # medicationReference - use reference ID as fallback name
+        med_ref = res["medicationReference"]
+        ref_id = med_ref.get("reference", '').split('/')[-1] if med_ref.get("reference") else ''
+        medication_display = med_ref.get("display") or ref_id or 'Unknown Medication'
+        medication_code = ref_id
+        # Create a synthetic medicationCodeableConcept for frontend compatibility
+        if medication_display != 'Unknown Medication':
+            medication_codeable_concept = {
+                "text": medication_display,
+                "coding": [{"code": medication_code, "display": medication_display}]
+            }
+    
     enc_ref = ((res.get("encounter") or {}).get("reference") or '')
     return {
         "id": res.get("id"),
         "patient_id": ((res.get("subject") or {}).get("reference") or '').split('/')[-1],
         "encounter_id": enc_ref.split('/')[-1] if enc_ref else '',
-        "medication_code": coding.get("code", ''),
-        "medication_display": coding.get("display") or coding.get("code") or 'Unknown Medication',
-        "medication_system": coding.get("system", ''),
+        "medicationCodeableConcept": medication_codeable_concept,
+        "medication_code": medication_code,
+        "medication_display": medication_display,
+        "medication_system": medication_system,
         "status": res.get("status", ''),
         "intent": res.get("intent", ''),
         "priority": res.get("priority", ''),
