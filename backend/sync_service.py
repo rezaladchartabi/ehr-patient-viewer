@@ -33,6 +33,7 @@ class SyncService:
             'Encounter',
             'MedicationRequest',
             'MedicationAdministration',
+            'MedicationDispense',
             'Observation',
             'Procedure',
             'Specimen'
@@ -73,6 +74,8 @@ class SyncService:
                     changed = self.local_db.upsert_patient(processed_data)
                 elif resource_type == 'AllergyIntolerance':
                     changed = self.local_db.upsert_allergy(processed_data)
+                elif resource_type == 'MedicationDispense':
+                    changed = self.local_db.upsert_medication_dispense(processed_data)
                 # Add other resource types as needed
                 else:
                     changed = False  # Placeholder for other resource types
@@ -143,6 +146,8 @@ class SyncService:
             return self._process_condition(resource)
         elif resource_type == 'Encounter':
             return self._process_encounter(resource)
+        elif resource_type == 'MedicationDispense':
+            return self._process_medication_dispense(resource)
         # Add other resource processors as needed
         return None
     
@@ -221,6 +226,118 @@ class SyncService:
             'end_date': resource.get('period', {}).get('end') if resource.get('period') else None,
             'location': resource.get('location', [{}])[0].get('location', {}).get('display') if resource.get('location') else None,
             'service_provider': resource.get('serviceProvider', {}).get('display') if resource.get('serviceProvider') else None,
+            'last_updated': resource.get('meta', {}).get('lastUpdated'),
+            'version_id': resource.get('meta', {}).get('versionId')
+        }
+    
+    def _process_medication_dispense(self, resource: Dict[str, Any]) -> Dict[str, Any]:
+        """Process MedicationDispense resource"""
+        # Extract encounter reference
+        encounter_id = None
+        if resource.get('context', {}).get('reference'):
+            encounter_id = resource['context']['reference'].split('/')[-1]
+        
+        # Extract medication information
+        medication_code = None
+        medication_display = None
+        medication_system = None
+        
+        if resource.get('medicationCodeableConcept'):
+            med_concept = resource['medicationCodeableConcept']
+            if med_concept.get('coding') and len(med_concept['coding']) > 0:
+                coding = med_concept['coding'][0]
+                medication_code = coding.get('code')
+                medication_display = coding.get('display')
+                medication_system = coding.get('system')
+            if not medication_display:
+                medication_display = med_concept.get('text')
+        
+        # Extract quantity information
+        quantity_value = None
+        quantity_unit = None
+        quantity_system = None
+        if resource.get('quantity'):
+            quantity_value = resource['quantity'].get('value')
+            quantity_unit = resource['quantity'].get('unit')
+            quantity_system = resource['quantity'].get('system')
+        
+        # Extract days supply
+        days_supply_value = None
+        days_supply_unit = None
+        if resource.get('daysSupply'):
+            days_supply_value = resource['daysSupply'].get('value')
+            days_supply_unit = resource['daysSupply'].get('unit')
+        
+        # Extract performer information
+        performer_actor_display = None
+        performer_actor_reference = None
+        if resource.get('performer') and len(resource['performer']) > 0:
+            performer = resource['performer'][0]
+            if performer.get('actor'):
+                performer_actor_display = performer['actor'].get('display')
+                performer_actor_reference = performer['actor'].get('reference')
+        
+        # Extract location
+        location_display = None
+        location_reference = None
+        if resource.get('location'):
+            location_display = resource['location'].get('display')
+            location_reference = resource['location'].get('reference')
+        
+        # Extract dosage instructions
+        dosage_instruction = None
+        if resource.get('dosageInstruction') and len(resource['dosageInstruction']) > 0:
+            dosage_instruction = resource['dosageInstruction'][0].get('text')
+        
+        # Extract substitution information
+        substitution_was_substituted = None
+        substitution_type_code = None
+        substitution_type_display = None
+        substitution_reason_code = None
+        substitution_reason_display = None
+        
+        if resource.get('substitution'):
+            substitution = resource['substitution']
+            substitution_was_substituted = substitution.get('wasSubstituted')
+            
+            if substitution.get('type', {}).get('coding') and len(substitution['type']['coding']) > 0:
+                type_coding = substitution['type']['coding'][0]
+                substitution_type_code = type_coding.get('code')
+                substitution_type_display = type_coding.get('display')
+            
+            if substitution.get('reason') and len(substitution['reason']) > 0:
+                reason = substitution['reason'][0]
+                if reason.get('coding') and len(reason['coding']) > 0:
+                    reason_coding = reason['coding'][0]
+                    substitution_reason_code = reason_coding.get('code')
+                    substitution_reason_display = reason_coding.get('display')
+        
+        return {
+            'id': resource.get('id'),
+            'patient_id': resource.get('subject', {}).get('reference', '').split('/')[-1] if resource.get('subject') else None,
+            'encounter_id': encounter_id,
+            'medication_code': medication_code,
+            'medication_display': medication_display,
+            'medication_system': medication_system,
+            'status': resource.get('status'),
+            'quantity_value': quantity_value,
+            'quantity_unit': quantity_unit,
+            'quantity_system': quantity_system,
+            'days_supply_value': days_supply_value,
+            'days_supply_unit': days_supply_unit,
+            'when_prepared': resource.get('whenPrepared'),
+            'when_handed_over': resource.get('whenHandedOver'),
+            'destination': resource.get('destination', {}).get('display') if resource.get('destination') else None,
+            'performer_actor_display': performer_actor_display,
+            'performer_actor_reference': performer_actor_reference,
+            'location_display': location_display,
+            'location_reference': location_reference,
+            'dosage_instruction': dosage_instruction,
+            'substitution_was_substituted': substitution_was_substituted,
+            'substitution_type_code': substitution_type_code,
+            'substitution_type_display': substitution_type_display,
+            'substitution_reason_code': substitution_reason_code,
+            'substitution_reason_display': substitution_reason_display,
             'last_updated': resource.get('meta', {}).get('lastUpdated'),
             'version_id': resource.get('meta', {}).get('versionId')
         }
@@ -321,6 +438,8 @@ class SyncService:
                                         self.local_db.upsert_condition(processed_resource)
                                     elif resource_type == 'Encounter':
                                         self.local_db.upsert_encounter(processed_resource)
+                                    elif resource_type == 'MedicationDispense':
+                                        self.local_db.upsert_medication_dispense(processed_resource)
                                     # Add other resource types as needed
                     except Exception as resource_error:
                         # Log but don't fail the entire sync for resource errors

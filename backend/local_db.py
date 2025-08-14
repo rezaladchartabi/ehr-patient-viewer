@@ -263,6 +263,42 @@ class LocalDatabase:
                 )
             """)
             
+            # Medication Dispenses table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS medication_dispenses (
+                    id TEXT PRIMARY KEY,
+                    patient_id TEXT,
+                    encounter_id TEXT,
+                    medication_code TEXT,
+                    medication_display TEXT,
+                    medication_system TEXT,
+                    status TEXT,
+                    quantity_value REAL,
+                    quantity_unit TEXT,
+                    quantity_system TEXT,
+                    days_supply_value REAL,
+                    days_supply_unit TEXT,
+                    when_prepared TEXT,
+                    when_handed_over TEXT,
+                    destination TEXT,
+                    performer_actor_display TEXT,
+                    performer_actor_reference TEXT,
+                    location_display TEXT,
+                    location_reference TEXT,
+                    dosage_instruction TEXT,
+                    substitution_was_substituted BOOLEAN,
+                    substitution_type_code TEXT,
+                    substitution_type_display TEXT,
+                    substitution_reason_code TEXT,
+                    substitution_reason_display TEXT,
+                    last_updated TEXT,
+                    version_id TEXT,
+                    hash TEXT,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (patient_id) REFERENCES patients (id) ON DELETE CASCADE
+                )
+            """)
+            
             # Sync metadata table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS sync_metadata (
@@ -476,6 +512,62 @@ class LocalDatabase:
                 encounter_data.get('end_date'),
                 encounter_data.get('last_updated'),
                 encounter_data.get('version_id'),
+                hash_value
+            ))
+            conn.commit()
+            return True
+
+    def upsert_medication_dispense(self, dispense_data: Dict[str, Any]) -> bool:
+        """Insert or update a medication dispense record, returns True if changed"""
+        hash_value = self.calculate_hash(dispense_data)
+        
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT hash FROM medication_dispenses WHERE id = ?",
+                (dispense_data['id'],)
+            )
+            existing = cursor.fetchone()
+            
+            if existing and existing[0] == hash_value:
+                return False  # No change
+            
+            conn.execute("""
+                INSERT OR REPLACE INTO medication_dispenses (
+                    id, patient_id, encounter_id, medication_code, medication_display, medication_system,
+                    status, quantity_value, quantity_unit, quantity_system, days_supply_value, days_supply_unit,
+                    when_prepared, when_handed_over, destination, performer_actor_display, performer_actor_reference,
+                    location_display, location_reference, dosage_instruction, substitution_was_substituted,
+                    substitution_type_code, substitution_type_display, substitution_reason_code, substitution_reason_display,
+                    last_updated, version_id, hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                dispense_data['id'],
+                dispense_data.get('patient_id'),
+                dispense_data.get('encounter_id'),
+                dispense_data.get('medication_code'),
+                dispense_data.get('medication_display'),
+                dispense_data.get('medication_system'),
+                dispense_data.get('status'),
+                dispense_data.get('quantity_value'),
+                dispense_data.get('quantity_unit'),
+                dispense_data.get('quantity_system'),
+                dispense_data.get('days_supply_value'),
+                dispense_data.get('days_supply_unit'),
+                dispense_data.get('when_prepared'),
+                dispense_data.get('when_handed_over'),
+                dispense_data.get('destination'),
+                dispense_data.get('performer_actor_display'),
+                dispense_data.get('performer_actor_reference'),
+                dispense_data.get('location_display'),
+                dispense_data.get('location_reference'),
+                dispense_data.get('dosage_instruction'),
+                dispense_data.get('substitution_was_substituted'),
+                dispense_data.get('substitution_type_code'),
+                dispense_data.get('substitution_type_display'),
+                dispense_data.get('substitution_reason_code'),
+                dispense_data.get('substitution_reason_display'),
+                dispense_data.get('last_updated'),
+                dispense_data.get('version_id'),
                 hash_value
             ))
             conn.commit()
