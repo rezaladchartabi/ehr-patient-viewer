@@ -2,6 +2,7 @@
   "name": "ehr-ui",
   "version": "0.1.0",
   "private": true,
+  "homepage": ".",
   "description": "Electronic Health Record (EHR) Patient Viewer with FHIR Integration",
   "keywords": ["ehr", "fhir", "healthcare", "react", "typescript", "fastapi"],
   "author": "EHR Development Team",
