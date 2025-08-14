@@ -49,6 +49,8 @@ function App() {
   });
   const [activeTab, setActiveTab] = useState('conditions');
   const [loading, setLoading] = useState(false);
+  const [allergies, setAllergies] = useState<any[]>([]);
+  const [allergiesLoading, setAllergiesLoading] = useState(false);
 
   // Load patients on mount
   useEffect(() => {
@@ -63,6 +65,7 @@ function App() {
     if (!selectedPatient) return;
     
     setLoading(true);
+    setAllergiesLoading(true);
     
     // Load encounters and all resource types in parallel
     Promise.all([
@@ -104,6 +107,19 @@ function App() {
       console.error('Failed to load patient data:', err);
       setLoading(false);
     });
+
+    // Load allergies separately
+    fetch(`${API_BASE}/local/patients/${selectedPatient.id}/allergies`)
+      .then(res => res.json())
+      .then(data => {
+        setAllergies(data.allergies || []);
+        setAllergiesLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to load allergies:', err);
+        setAllergies([]);
+        setAllergiesLoading(false);
+      });
   }, [selectedPatient]);
 
   // Filter resources by encounter
@@ -371,6 +387,28 @@ function App() {
                 <div>Ethnicity: {selectedPatient.ethnicity || 'N/A'}</div>
                 <div>Marital Status: {selectedPatient.marital_status || 'N/A'}</div>
                 <div>Identifier: {selectedPatient.identifier || 'N/A'}</div>
+              </div>
+              
+              {/* Allergies Section */}
+              <div className="mt-4">
+                <h3 className="font-medium text-sm mb-2">Allergies:</h3>
+                {allergiesLoading ? (
+                  <div className="text-sm text-gray-500">Loading allergies...</div>
+                ) : allergies.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {allergies.map((allergy, index) => (
+                      <span 
+                        key={index}
+                        className="inline-block bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full"
+                        title={allergy.note || 'Clinical allergy'}
+                      >
+                        {allergy.allergy_name}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">No known allergies</div>
+                )}
               </div>
               
               {/* Encounter Filter */}

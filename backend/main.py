@@ -2015,26 +2015,49 @@ async def get_patient_allergies_by_subject_id(subject_id: str):
         
         patients = local_db.get_all_patients()
         fhir_id = None
+        patient_name = None
         
         for patient in patients:
             if patient.get('identifier') == subject_id:
                 fhir_id = patient.get('id')
+                patient_name = patient.get('family_name')
                 break
         
         if not fhir_id:
             raise HTTPException(status_code=404, detail=f"Patient with Subject ID {subject_id} not found")
         
-        # TODO: Once allergies are stored in database, retrieve them here
-        # For now, return placeholder
+        # Get allergies from database
+        allergies = local_db.get_patient_allergies(fhir_id)
+        
         return {
             "subject_id": subject_id,
             "fhir_id": fhir_id,
-            "allergies": [],
-            "message": "Allergy data will be available after XLSX processing is complete"
+            "patient_name": patient_name,
+            "allergies": allergies,
+            "count": len(allergies)
         }
         
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get patient allergies: {str(e)}")
+
+@app.get("/local/patients/{patient_id}/allergies")
+async def get_patient_allergies_by_fhir_id(patient_id: str):
+    """Get allergies for a patient by FHIR Patient ID"""
+    try:
+        if not local_db:
+            raise HTTPException(status_code=500, detail="Local database not available")
+        
+        # Get allergies from database
+        allergies = local_db.get_patient_allergies(patient_id)
+        
+        return {
+            "patient_id": patient_id,
+            "allergies": allergies,
+            "count": len(allergies)
+        }
+        
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get patient allergies: {str(e)}")
 

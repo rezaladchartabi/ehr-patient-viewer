@@ -651,3 +651,110 @@ class LocalDatabase:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("SELECT COUNT(*) FROM patients")
             return cursor.fetchone()[0]
+    
+    def upsert_clinical_allergy(self, subject_id: str, allergy_name: str, source_note_id: str, chart_time: str = None):
+        """Insert or update clinical allergy data extracted from discharge notes"""
+        try:
+            # First, find the patient by subject_id (identifier)
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT id FROM patients WHERE identifier = ?", 
+                    (subject_id,)
+                )
+                patient_row = cursor.fetchone()
+                
+                if not patient_row:
+                    logger.warning(f"Patient with subject_id {subject_id} not found")
+                    return False
+                
+                patient_id = patient_row[0]
+                
+                # Create a unique ID for this clinical allergy
+                clinical_allergy_id = f"clinical-{subject_id}-{hashlib.md5(allergy_name.encode()).hexdigest()[:8]}"
+                
+                # Check if this allergy already exists
+                cursor = conn.execute(
+                    "SELECT id FROM allergies WHERE id = ?",
+                    (clinical_allergy_id,)
+                )
+                existing = cursor.fetchone()
+                
+                current_time = datetime.now().isoformat()
+                
+                if existing:
+                    # Update existing allergy
+                    conn.execute("""
+                        UPDATE allergies SET
+                            code_display = ?,
+                            note = ?,
+                            recorded_date = ?,
+                            last_updated = ?
+                        WHERE id = ?
+                    """, (
+                        allergy_name,
+                        f"Extracted from clinical note: {source_note_id}",
+                        chart_time or current_time,
+                        current_time,
+                        clinical_allergy_id
+                    ))
+                else:
+                    # Insert new allergy
+                    conn.execute("""
+                        INSERT INTO allergies (
+                            id, patient_id, code_display, category, clinical_status,
+                            verification_status, type, note, recorded_date, last_updated,
+                            created_at, hash
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        clinical_allergy_id,
+                        patient_id,
+                        allergy_name,
+                        "medication",  # Default category
+                        "active",
+                        "confirmed",
+                        "allergy",
+                        f"Extracted from clinical note: {source_note_id}",
+                        chart_time or current_time,
+                        current_time,
+                        current_time,
+                        hashlib.md5(f"{patient_id}-{allergy_name}".encode()).hexdigest()
+                    ))
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error upserting clinical allergy for {subject_id}: {e}")
+            return False
+    
+    def get_patient_allergies(self, patient_id: str) -> List[Dict]:
+        """Get all allergies for a patient"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    SELECT id, code_display, category, clinical_status, 
+                           verification_status, type, criticality, note, recorded_date
+                    FROM allergies 
+                    WHERE patient_id = ?
+                    ORDER BY recorded_date DESC
+                """, (patient_id,))
+                
+                allergies = []
+                for row in cursor.fetchall():
+                    allergies.append({
+                        'id': row[0],
+                        'allergy_name': row[1],
+                        'category': row[2],
+                        'clinical_status': row[3],
+                        'verification_status': row[4],
+                        'type': row[5],
+                        'criticality': row[6],
+                        'note': row[7],
+                        'recorded_date': row[8]
+                    })
+                
+                return allergies
+                
+        except Exception as e:
+            logger.error(f"Error getting allergies for patient {patient_id}: {e}")
+            return []
