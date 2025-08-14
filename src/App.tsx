@@ -167,6 +167,9 @@ function App() {
               <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
               <span className="detail-item">Intent: {resource.intent || 'N/A'}</span>
               <span className="detail-item">Authored: {resource.authoredOn || 'N/A'}</span>
+              {resource.route_display && (
+                <span className="detail-item">Route: {resource.route_display}</span>
+              )}
               {resource.medicationCodeableConcept?.coding?.[0]?.code && (
                 <span className="detail-item">Code: {resource.medicationCodeableConcept.coding[0].code}</span>
               )}
@@ -189,14 +192,14 @@ function App() {
             <div className="resource-details">
               <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
               <span className="detail-item">Effective: {resource.effectiveDateTime || resource.effectivePeriod?.start || 'N/A'}</span>
+              {resource.route_display && (
+                <span className="detail-item">Route: {resource.route_display}</span>
+              )}
               {resource.medicationCodeableConcept?.coding?.[0]?.code && (
                 <span className="detail-item">Code: {resource.medicationCodeableConcept.coding[0].code}</span>
               )}
               {resource.dosage?.dose?.value && (
                 <span className="detail-item">Dose: {resource.dosage.dose.value} {resource.dosage.dose.unit}</span>
-              )}
-              {resource.dosage?.route?.coding?.[0]?.display && (
-                <span className="detail-item">Route: {resource.dosage.route.coding[0].display}</span>
               )}
             </div>
           </div>
@@ -255,6 +258,9 @@ function App() {
             <div className="resource-details">
               <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
               <span className="detail-item">Dispensed: {resource.whenHandedOver || resource.whenPrepared || 'N/A'}</span>
+              {resource.route_display && (
+                <span className="detail-item">Route: {resource.route_display}</span>
+              )}
               {/* Show quantity even if 0 to help debug */}
               {resource.quantity && (
                 <span className="detail-item">Quantity: {resource.quantity.value || 0} {resource.quantity.unit || resource.quantity.code || ''}</span>

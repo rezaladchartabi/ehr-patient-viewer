@@ -377,6 +377,18 @@ def _map_med_req(res: Dict[str, Any]) -> Dict[str, Any]:
                 "coding": [{"code": medication_code, "display": medication_display}]
             }
     
+    # Extract route information from dosageInstruction
+    route_code = ''
+    route_display = ''
+    route_system = ''
+    if res.get("dosageInstruction") and len(res["dosageInstruction"]) > 0:
+        dosage = res["dosageInstruction"][0]
+        if dosage.get("route") and dosage["route"].get("coding") and len(dosage["route"]["coding"]) > 0:
+            route_coding = dosage["route"]["coding"][0]
+            route_code = route_coding.get("code", '')
+            route_display = route_coding.get("display", route_code)
+            route_system = route_coding.get("system", '')
+    
     enc_ref = ((res.get("encounter") or {}).get("reference") or '')
     return {
         "id": res.get("id"),
@@ -386,6 +398,9 @@ def _map_med_req(res: Dict[str, Any]) -> Dict[str, Any]:
         "medication_code": medication_code,
         "medication_display": medication_display,
         "medication_system": medication_system,
+        "route_code": route_code,
+        "route_display": route_display,
+        "route_system": route_system,
         "status": res.get("status", ''),
         "intent": res.get("intent", ''),
         "priority": res.get("priority", ''),
@@ -396,6 +411,17 @@ def _map_med_admin(res: Dict[str, Any]) -> Dict[str, Any]:
     c = (res.get("medicationCodeableConcept") or {}).get("coding") or [{}]
     coding = c[0]
     ctx_ref = ((res.get("context") or {}).get("reference") or '')
+    
+    # Extract route information from dosage
+    route_code = ''
+    route_display = ''
+    route_system = ''
+    if res.get("dosage") and res["dosage"].get("route") and res["dosage"]["route"].get("coding") and len(res["dosage"]["route"]["coding"]) > 0:
+        route_coding = res["dosage"]["route"]["coding"][0]
+        route_code = route_coding.get("code", '')
+        route_display = route_coding.get("display", route_code)
+        route_system = route_coding.get("system", '')
+    
     return {
         "id": res.get("id"),
         "patient_id": ((res.get("subject") or {}).get("reference") or '').split('/')[-1],
@@ -403,6 +429,9 @@ def _map_med_admin(res: Dict[str, Any]) -> Dict[str, Any]:
         "medication_code": coding.get("code", ''),
         "medication_display": coding.get("display") or coding.get("code") or 'Unknown Medication',
         "medication_system": coding.get("system", ''),
+        "route_code": route_code,
+        "route_display": route_display,
+        "route_system": route_system,
         "status": res.get("status", ''),
         "effective_start": res.get("effectiveDateTime") or ((res.get("effectivePeriod") or {}).get("start")) or '',
         "effective_end": ((res.get("effectivePeriod") or {}).get("end")) or '',
@@ -417,6 +446,18 @@ def _map_med_dispense(res: Dict[str, Any]) -> Dict[str, Any]:
     quantity = res.get("quantity") or {}
     days_supply = res.get("daysSupply") or {}
     
+    # Extract route information from dosageInstruction
+    route_code = ''
+    route_display = ''
+    route_system = ''
+    if res.get("dosageInstruction") and len(res["dosageInstruction"]) > 0:
+        dosage = res["dosageInstruction"][0]
+        if dosage.get("route") and dosage["route"].get("coding") and len(dosage["route"]["coding"]) > 0:
+            route_coding = dosage["route"]["coding"][0]
+            route_code = route_coding.get("code", '')
+            route_display = route_coding.get("display", route_code)
+            route_system = route_coding.get("system", '')
+    
     return {
         "id": res.get("id"),
         "patient_id": ((res.get("subject") or {}).get("reference") or '').split('/')[-1],
@@ -425,6 +466,9 @@ def _map_med_dispense(res: Dict[str, Any]) -> Dict[str, Any]:
         "medication_code": coding.get("code", ''),
         "medication_display": coding.get("display") or coding.get("code") or 'Unknown Medication',
         "medication_system": coding.get("system", ''),
+        "route_code": route_code,
+        "route_display": route_display,
+        "route_system": route_system,
         "status": res.get("status", ''),
         "quantity": quantity,
         "daysSupply": days_supply,
