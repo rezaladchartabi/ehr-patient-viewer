@@ -412,6 +412,19 @@ def _map_med_admin(res: Dict[str, Any]) -> Dict[str, Any]:
     coding = c[0]
     ctx_ref = ((res.get("context") or {}).get("reference") or '')
     
+    # Extract medication information - prioritize text field as per user example
+    medication_code = coding.get("code", '')
+    medication_system = coding.get("system", '')
+    medication_display = 'Unknown Medication'
+    
+    if res.get("medicationCodeableConcept"):
+        med_concept = res["medicationCodeableConcept"]
+        # Priority: text > display > code (text contains "Lisinopril" etc.)
+        medication_display = (med_concept.get("text") or 
+                            coding.get("display") or 
+                            coding.get("code") or 
+                            'Unknown Medication')
+    
     # Extract route information from dosage
     route_code = ''
     route_display = ''
@@ -426,9 +439,10 @@ def _map_med_admin(res: Dict[str, Any]) -> Dict[str, Any]:
         "id": res.get("id"),
         "patient_id": ((res.get("subject") or {}).get("reference") or '').split('/')[-1],
         "encounter_id": ctx_ref.split('/')[-1] if ctx_ref else '',
-        "medication_code": coding.get("code", ''),
-        "medication_display": coding.get("display") or coding.get("code") or 'Unknown Medication',
-        "medication_system": coding.get("system", ''),
+        "medicationCodeableConcept": res.get("medicationCodeableConcept"),
+        "medication_code": medication_code,
+        "medication_display": medication_display,
+        "medication_system": medication_system,
         "route_code": route_code,
         "route_display": route_display,
         "route_system": route_system,
