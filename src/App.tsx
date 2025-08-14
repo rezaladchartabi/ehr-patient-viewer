@@ -255,11 +255,24 @@ function App() {
             <div className="resource-details">
               <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
               <span className="detail-item">Dispensed: {resource.whenHandedOver || resource.whenPrepared || 'N/A'}</span>
-              {resource.quantity?.value && (
-                <span className="detail-item">Quantity: {resource.quantity.value} {resource.quantity.unit}</span>
+              {/* Show quantity even if 0 to help debug */}
+              {resource.quantity && (
+                <span className="detail-item">Quantity: {resource.quantity.value || 0} {resource.quantity.unit || resource.quantity.code || ''}</span>
               )}
-              {resource.daysSupply?.value && (
-                <span className="detail-item">Days Supply: {resource.daysSupply.value}</span>
+              {resource.daysSupply && (
+                <span className="detail-item">Days Supply: {resource.daysSupply.value || 0}</span>
+              )}
+              {/* Additional quantity fields that might exist */}
+              {resource.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.value && (
+                <span className="detail-item">Dose: {resource.dosageInstruction[0].doseAndRate[0].doseQuantity.value} {resource.dosageInstruction[0].doseAndRate[0].doseQuantity.unit}</span>
+              )}
+              {/* Show performer/dispenser if available */}
+              {resource.performer?.[0]?.actor?.display && (
+                <span className="detail-item">Dispenser: {resource.performer[0].actor.display}</span>
+              )}
+              {/* Show location if available */}
+              {resource.location?.display && (
+                <span className="detail-item">Location: {resource.location.display}</span>
               )}
             </div>
           </div>
