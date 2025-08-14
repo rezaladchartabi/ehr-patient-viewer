@@ -289,6 +289,34 @@ async def _startup_client():
             headers={"User-Agent": "EHR-Proxy/1.0"}
         )
     ensure_search_schema()
+    
+    # Auto-sync database on startup to populate cache and local DB
+    auto_sync_enabled = os.getenv("AUTO_SYNC_ON_STARTUP", "true").lower() == "true"
+    if auto_sync_enabled:
+        logger.info("Auto-sync on startup is enabled, checking database...")
+        try:
+            # Check if database is empty
+            patient_count = local_db.get_patient_count()
+            if patient_count == 0:
+                logger.info("Database is empty, triggering background sync...")
+                asyncio.create_task(_auto_sync_on_startup())
+            else:
+                logger.info(f"Database already has {patient_count} patients, skipping auto-sync")
+        except Exception as e:
+            logger.error(f"Failed to check database or start auto-sync: {e}")
+    else:
+        logger.info("Auto-sync on startup is disabled")
+
+async def _auto_sync_on_startup():
+    """Background task to sync database on startup"""
+    try:
+        # Wait a bit to ensure the server is fully ready
+        await asyncio.sleep(5)
+        logger.info("Executing startup sync...")
+        result = await sync_service.sync_all_resources()
+        logger.info(f"Startup sync completed: {result}")
+    except Exception as e:
+        logger.error(f"Startup sync failed: {e}")
 
 @app.on_event("shutdown")
 async def _shutdown_client():

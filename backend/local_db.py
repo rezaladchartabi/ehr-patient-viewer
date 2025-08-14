@@ -481,6 +481,12 @@ class LocalDatabase:
             conn.commit()
             return True
     
+    def get_patient_count(self) -> int:
+        """Get total count of patients in database"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute("SELECT COUNT(*) FROM patients")
+            return cursor.fetchone()[0]
+    
     def get_patient_with_allergies(self, patient_id: str) -> Optional[Dict[str, Any]]:
         """Get a patient with their allergies"""
         with sqlite3.connect(self.db_path) as conn:
