@@ -1217,6 +1217,41 @@ async def get_medication_administrations(
     
     return data
 
+@app.get("/MedicationDispense")
+async def get_medication_dispenses(
+    patient: Optional[str] = None,
+    encounter: Optional[str] = None,
+    _count: Optional[int] = 100
+):
+    """Get medication dispenses from FHIR server with caching"""
+    # Fetch from FHIR
+    params = {"_count": _count, "name": None}
+    if patient:
+        params["patient"] = patient
+    if encounter:
+        params["encounter"] = encounter
+    cache_key = build_cache_key("GET", "/MedicationDispense", params)
+    # Check cache
+    if cache_key in cache:
+        cached_data = cache[cache_key]
+        if time.time() - cached_data["timestamp"] < CACHE_TTL:
+            return cached_data["data"]
+    
+    try:
+        data = await fetch_from_fhir("/MedicationDispense", {k: v for k, v in params.items() if v is not None})
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    
+    # Cache the result
+    cache[cache_key] = {
+        "data": data,
+        "timestamp": time.time()
+    }
+    
+    return data
+
 @app.get("/Encounter")
 async def get_encounters(
     patient: Optional[str] = None,
