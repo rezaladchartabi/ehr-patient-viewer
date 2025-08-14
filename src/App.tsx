@@ -51,6 +51,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [allergies, setAllergies] = useState<any[]>([]);
   const [allergiesLoading, setAllergiesLoading] = useState(false);
+  const [pmh, setPmh] = useState<any[]>([]);
+  const [pmhLoading, setPmhLoading] = useState(false);
 
   // Load patients on mount
   useEffect(() => {
@@ -66,6 +68,7 @@ function App() {
     
     setLoading(true);
     setAllergiesLoading(true);
+    setPmhLoading(true);
     
     // Load encounters and all resource types in parallel
     Promise.all([
@@ -119,6 +122,19 @@ function App() {
         console.error('Failed to load allergies:', err);
         setAllergies([]);
         setAllergiesLoading(false);
+      });
+
+    // Load Past Medical History separately
+    fetch(`${API_BASE}/local/patients/${selectedPatient.id}/pmh`)
+      .then(res => res.json())
+      .then(data => {
+        setPmh(data.pmh_conditions || []);
+        setPmhLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to load PMH:', err);
+        setPmh([]);
+        setPmhLoading(false);
       });
   }, [selectedPatient]);
 
@@ -333,8 +349,8 @@ function App() {
     if (filteredResources.length === 0) {
       return <div className="p-4 text-gray-500">No {tabName} found</div>;
     }
-    
-    return (
+
+  return (
       <div className="p-4">
         <h3 className="font-semibold mb-3">{tabName} ({filteredResources.length})</h3>
         <div className="resource-list">
@@ -350,11 +366,11 @@ function App() {
 
   return (
     <div className="flex h-screen">
-      {/* Patient List */}
+        {/* Patient List */}
       <div className="w-1/3 border-r bg-white overflow-y-auto">
         <div className="p-4 border-b">
           <h2 className="font-bold text-lg">Patients ({patients.length})</h2>
-        </div>
+                </div>
         <div className="divide-y">
           {patients.map(patient => (
             <div
@@ -371,9 +387,9 @@ function App() {
             </div>
           ))}
         </div>
-      </div>
+        </div>
 
-      {/* Patient Details */}
+        {/* Patient Details */}
       <div className="flex-1 flex flex-col">
         {selectedPatient ? (
           <>
@@ -408,6 +424,35 @@ function App() {
                   </div>
                 ) : (
                   <div className="text-sm text-gray-500">No known allergies</div>
+                )}
+              </div>
+              
+              {/* Past Medical History Section */}
+              <div className="mt-4">
+                <h3 className="font-medium text-sm mb-2">Past Medical History:</h3>
+                {pmhLoading ? (
+                  <div className="text-sm text-gray-500">Loading medical history...</div>
+                ) : pmh.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {pmh.slice(0, 10).map((condition, index) => (
+                      <span 
+                        key={index}
+                        className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full"
+                        title={condition.note || 'Clinical condition'}
+                      >
+                        {condition.condition_name.length > 40 
+                          ? condition.condition_name.substring(0, 40) + '...'
+                          : condition.condition_name}
+                      </span>
+                    ))}
+                    {pmh.length > 10 && (
+                      <span className="inline-block bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">
+                        +{pmh.length - 10} more
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-500">No medical history available</div>
                 )}
               </div>
               
@@ -466,8 +511,8 @@ function App() {
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500">
             Select a patient to view details
-          </div>
-        )}
+            </div>
+          )}
       </div>
     </div>
   );

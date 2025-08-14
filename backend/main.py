@@ -2105,6 +2105,107 @@ async def bulk_upload_allergies(request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to bulk upload allergies: {str(e)}")
 
+# Past Medical History (PMH) endpoints
+@app.get("/pmh/patient/{subject_id}")
+async def get_patient_pmh_by_subject_id(subject_id: str):
+    """Get Past Medical History for a patient by Subject ID"""
+    try:
+        # First, map Subject ID to FHIR ID
+        if not local_db:
+            raise HTTPException(status_code=500, detail="Local database not available")
+        
+        patients = local_db.get_all_patients()
+        fhir_id = None
+        patient_name = None
+        
+        for patient in patients:
+            if patient.get('identifier') == subject_id:
+                fhir_id = patient.get('id')
+                patient_name = patient.get('family_name')
+                break
+        
+        if not fhir_id:
+            raise HTTPException(status_code=404, detail=f"Patient with Subject ID {subject_id} not found")
+        
+        # Get PMH from database
+        pmh_conditions = local_db.get_patient_pmh(fhir_id)
+        
+        return {
+            "subject_id": subject_id,
+            "fhir_id": fhir_id,
+            "patient_name": patient_name,
+            "pmh_conditions": pmh_conditions,
+            "count": len(pmh_conditions)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get patient PMH: {str(e)}")
+
+@app.get("/local/patients/{patient_id}/pmh")
+async def get_patient_pmh_by_fhir_id(patient_id: str):
+    """Get Past Medical History for a patient by FHIR Patient ID"""
+    try:
+        if not local_db:
+            raise HTTPException(status_code=500, detail="Local database not available")
+        
+        # Get PMH from database
+        pmh_conditions = local_db.get_patient_pmh(patient_id)
+        
+        return {
+            "patient_id": patient_id,
+            "pmh_conditions": pmh_conditions,
+            "count": len(pmh_conditions)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get patient PMH: {str(e)}")
+
+@app.post("/pmh/bulk-upload")
+async def bulk_upload_pmh(request: Request):
+    """Bulk upload PMH data to the database"""
+    try:
+        if not local_db:
+            raise HTTPException(status_code=500, detail="Local database not available")
+        
+        data = await request.json()
+        patient_pmh = data.get('patient_pmh', {})
+        
+        success_count = 0
+        error_count = 0
+        
+        for subject_id, conditions in patient_pmh.items():
+            for condition in conditions:
+                condition_name = condition.get('condition_name')
+                source_note_id = condition.get('source_note_id')
+                chart_time = condition.get('chart_time')
+                
+                if condition_name and source_note_id:
+                    success = local_db.upsert_clinical_pmh(
+                        subject_id=subject_id,
+                        condition_name=condition_name,
+                        source_note_id=source_note_id,
+                        chart_time=chart_time
+                    )
+                    
+                    if success:
+                        success_count += 1
+                    else:
+                        error_count += 1
+                else:
+                    error_count += 1
+        
+        return {
+            "message": "PMH bulk upload completed",
+            "success_count": success_count,
+            "error_count": error_count,
+            "total_processed": success_count + error_count
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to bulk upload PMH: {str(e)}")
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(

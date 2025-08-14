@@ -758,3 +758,98 @@ class LocalDatabase:
         except Exception as e:
             logger.error(f"Error getting allergies for patient {patient_id}: {e}")
             return []
+    
+    def upsert_clinical_pmh(self, subject_id: str, condition_name: str, source_note_id: str, chart_time: str = None):
+        """Insert or update clinical Past Medical History data extracted from discharge notes"""
+        try:
+            # First, find the patient by subject_id (identifier)
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute(
+                    "SELECT id FROM patients WHERE identifier = ?", 
+                    (subject_id,)
+                )
+                patient_row = cursor.fetchone()
+                
+                if not patient_row:
+                    logger.warning(f"Patient with subject_id {subject_id} not found")
+                    return False
+                
+                patient_id = patient_row[0]
+                
+                # Create a unique ID for this clinical PMH condition
+                clinical_pmh_id = f"pmh-{subject_id}-{hashlib.md5(condition_name.encode()).hexdigest()[:8]}"
+                
+                # Check if this condition already exists
+                cursor = conn.execute(
+                    "SELECT id FROM conditions WHERE id = ?",
+                    (clinical_pmh_id,)
+                )
+                existing = cursor.fetchone()
+                
+                current_time = datetime.now().isoformat()
+                
+                if existing:
+                    # Update existing condition
+                    conn.execute("""
+                        UPDATE conditions SET
+                            code_display = ?,
+                            status = ?,
+                            last_updated = ?
+                        WHERE id = ?
+                    """, (
+                        condition_name,
+                        f"Extracted from clinical note: {source_note_id}",
+                        current_time,
+                        clinical_pmh_id
+                    ))
+                else:
+                    # Insert new condition
+                    conn.execute("""
+                        INSERT INTO conditions (
+                            id, patient_id, code_display, category, status, 
+                            last_updated, created_at, hash
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (
+                        clinical_pmh_id,
+                        patient_id,
+                        condition_name,
+                        "medical-history",
+                        f"Extracted from clinical note: {source_note_id}",
+                        current_time,
+                        current_time,
+                        hashlib.md5(f"{patient_id}-{condition_name}".encode()).hexdigest()
+                    ))
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error upserting clinical PMH for {subject_id}: {e}")
+            return False
+    
+    def get_patient_pmh(self, patient_id: str) -> List[Dict]:
+        """Get all Past Medical History conditions for a patient"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("""
+                    SELECT id, code_display, category, status, last_updated
+                    FROM conditions 
+                    WHERE patient_id = ? AND category = 'medical-history'
+                    ORDER BY last_updated DESC
+                """, (patient_id,))
+                
+                conditions = []
+                for row in cursor.fetchall():
+                    conditions.append({
+                        'id': row[0],
+                        'condition_name': row[1],
+                        'category': row[2],
+                        'note': row[3],
+                        'recorded_date': row[4]
+                    })
+                
+                return conditions
+                
+        except Exception as e:
+            logger.error(f"Error getting PMH for patient {patient_id}: {e}")
+            return []
