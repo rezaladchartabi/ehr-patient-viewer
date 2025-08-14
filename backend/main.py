@@ -493,6 +493,40 @@ def _map_med_dispense(res: Dict[str, Any]) -> Dict[str, Any]:
         "dosageInstruction": res.get("dosageInstruction", []),
     }
 
+def _map_specimen(res: Dict[str, Any]) -> Dict[str, Any]:
+    """Map Specimen resource to extract type information"""
+    # Extract specimen type information
+    specimen_type_code = ''
+    specimen_type_display = 'Unknown Specimen'
+    specimen_type_system = ''
+    
+    if res.get("type") and res["type"].get("coding") and len(res["type"]["coding"]) > 0:
+        type_coding = res["type"]["coding"][0]
+        specimen_type_code = type_coding.get("code", '')
+        specimen_type_display = type_coding.get("display", specimen_type_code)
+        specimen_type_system = type_coding.get("system", '')
+    elif res.get("type") and res["type"].get("text"):
+        specimen_type_display = res["type"]["text"]
+    
+    return {
+        "id": res.get("id"),
+        "patient_id": ((res.get("subject") or {}).get("reference") or '').split('/')[-1],
+        "type": {
+            "text": specimen_type_display,
+            "coding": [{
+                "code": specimen_type_code,
+                "display": specimen_type_display,
+                "system": specimen_type_system
+            }]
+        },
+        "status": res.get("status", ''),
+        "collection": res.get("collection"),
+        "receivedTime": res.get("receivedTime"),
+        "note": res.get("note"),
+        "last_updated": res.get("meta", {}).get("lastUpdated"),
+        "version_id": res.get("meta", {}).get("versionId")
+    }
+
 def _within(ts: str, start: Optional[str], end: Optional[str]) -> bool:
     if not ts:
         return False
@@ -1481,6 +1515,14 @@ async def get_specimens(
     
     try:
         data = await fetch_from_fhir("/Specimen", {k: v for k, v in params.items() if v is not None})
+        
+        # Apply mapping function to each entry to extract specimen type information properly
+        if data and "entry" in data:
+            for entry in data["entry"]:
+                if "resource" in entry:
+                    # Replace the resource with the mapped version
+                    entry["resource"] = _map_specimen(entry["resource"])
+                    
     except HTTPException as e:
         raise e
     except Exception as e:
