@@ -18,7 +18,7 @@
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
-    "build:deploy": "DISABLE_ESLINT_PLUGIN=true CI=false react-scripts build",
+    "build:deploy": "ESLINT_CONFIG_FILE=.eslintrc.deploy.json CI=false react-scripts build",
     "test": "react-scripts test",
     "test:coverage": "react-scripts test --coverage --watchAll=false",
     "test:ci": "react-scripts test --coverage --watchAll=false --ci",

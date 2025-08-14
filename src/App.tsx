@@ -7,10 +7,11 @@ import { useTheme } from 'next-themes';
 import { usePatientList } from './hooks/usePatientList';
 import { usePatientData, Patient } from './hooks/usePatientData';
 
-function App() {
-  const { theme, setTheme } = useTheme();
-  const isDark = theme === 'dark';
-  const toggleTheme = () => setTheme(isDark ? 'light' : 'dark');
+function App(): JSX.Element {
+  const { theme } = useTheme();
+  // const isDark = theme === 'dark';
+  // Theme toggle functionality (for future use)
+  // const toggleTheme = (): void => setTheme(isDark ? 'light' : 'dark');
 
   // Patient list management
   const {
@@ -31,16 +32,17 @@ function App() {
     currentPatient,
     patientSummary,
     encounters,
-    encounterData,
+    // encounterData, // Currently unused
     fetchPatientData,
     fetchEncounterData,
-    clearData,
+    // clearData, // Currently unused
     getEncounterData
   } = usePatientData();
 
   // Local state
   const [selectedEncounterId, setSelectedEncounterId] = useState<string | null>(null);
-  const [showSearchOverlay, setShowSearchOverlay] = useState(false);
+  // Search overlay state (for future use)
+  // const [showSearchOverlay, setShowSearchOverlay] = useState(false);
 
   // Handle patient selection
   const handlePatientSelect = useCallback(async (patient: Patient) => {
@@ -74,11 +76,11 @@ function App() {
     }
   }, [encounters, selectedEncounterId, handleEncounterSelect]);
 
-  // Handle search
-  const handleSearch = useCallback((query: string) => {
-    // Search functionality is handled by SearchBar component
-    console.log('Search query:', query);
-  }, []);
+  // Handle search (for future use)
+  // const handleSearch = useCallback((query: string): void => {
+  //   // Search functionality is handled by SearchBar component
+  //   console.log('Search query:', query);
+  // }, []);
 
   const loading = patientsLoading || patientDataLoading;
   const error = patientsError || patientDataError;
@@ -112,7 +114,7 @@ function App() {
             patients={patients}
             selectedId={currentPatient?.id}
             onSelect={handlePatientSelect}
-            renderItem={(p: Patient) => (
+            renderItem={(p: Patient): JSX.Element => (
               <div>
                 <div className="font-semibold">{p.family_name}</div>
                 <div className="text-xs text-gray-500 dark:text-neutral-400">

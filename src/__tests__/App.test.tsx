@@ -22,7 +22,7 @@ jest.mock('../services/api', () => ({
 
 // Mock the theme provider
 jest.mock('next-themes', () => ({
-  useTheme: () => ({
+  useTheme: (): { theme: string; setTheme: jest.Mock } => ({
     theme: 'light',
     setTheme: jest.fn(),
   }),
@@ -148,6 +148,9 @@ describe('App Component', () => {
     
     await waitFor(() => {
       expect(screen.getByText('TestPatient')).toBeInTheDocument();
+    });
+    
+    await waitFor(() => {
       expect(screen.getByText('AnotherPatient')).toBeInTheDocument();
     });
   });
@@ -173,7 +176,13 @@ describe('App Component', () => {
     // Verify API calls were made
     await waitFor(() => {
       expect(api.getPatient).toHaveBeenCalledWith('test-patient-1');
+    });
+    
+    await waitFor(() => {
       expect(api.getEncounters).toHaveBeenCalledWith('test-patient-1', 100);
+    });
+    
+    await waitFor(() => {
       expect(api.getConditions).toHaveBeenCalledWith('test-patient-1', 100);
     });
   });
@@ -198,7 +207,13 @@ describe('App Component', () => {
     // Check that patient summary is displayed
     await waitFor(() => {
       expect(screen.getByText('TestPatient')).toBeInTheDocument();
+    });
+    
+    await waitFor(() => {
       expect(screen.getByText('male')).toBeInTheDocument();
+    });
+    
+    await waitFor(() => {
       expect(screen.getByText('1990-01-01')).toBeInTheDocument();
     });
   });
@@ -244,7 +259,7 @@ describe('App Component', () => {
 });
 
 describe('Error Boundary', () => {
-  const ThrowError = () => {
+  const ThrowError = (): never => {
     throw new Error('Test error');
   };
 
