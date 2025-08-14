@@ -2,7 +2,6 @@ import {
   APIResponse, 
   PaginatedResponse, 
   LocalPatient, 
-  LocalAllergy, 
   Encounter, 
   Condition,
   APIError 

@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import config from '../config';
 
 // Types
 export interface Patient {
@@ -220,7 +221,6 @@ const isCacheValid = (timestamp: number, ttl: number) => {
 };
 
 const clearExpiredCache = () => {
-  const now = Date.now();
   Array.from(patientDataCache.entries()).forEach(([key, value]) => {
     if (!isCacheValid(value.timestamp, value.ttl)) {
       patientDataCache.delete(key);
@@ -231,8 +231,6 @@ const clearExpiredCache = () => {
 const getCacheKey = (patientId: string, encounterId?: string, resourceType?: string) => {
   return `${patientId}:${encounterId || 'all'}:${resourceType || 'all'}`;
 };
-
-import config from '../config';
 
 // API base URL
 const API_BASE = config.api.baseUrl;

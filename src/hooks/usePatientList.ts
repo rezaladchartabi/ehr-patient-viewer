@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { Patient } from './usePatientData';
+import config from '../config';
 
 // Cache for patient list data
 const patientListCache = new Map<string, {
@@ -16,7 +17,6 @@ const isCacheValid = (timestamp: number, ttl: number) => {
 };
 
 const clearExpiredCache = () => {
-  const now = Date.now();
   Array.from(patientListCache.entries()).forEach(([key, value]) => {
     if (!isCacheValid(value.timestamp, value.ttl)) {
       patientListCache.delete(key);
@@ -30,8 +30,6 @@ const getCacheKey = (cursor?: string, allowlist?: string[]) => {
   }
   return `cursor:${cursor || 'initial'}`;
 };
-
-import config from '../config';
 
 // API base URL
 const API_BASE = config.api.baseUrl;
@@ -96,7 +94,6 @@ const ALLOWLIST_IDS = [
 ];
 
 // Set to false to fetch all patients instead of just allowlisted ones
-const USE_ALLOWLIST = true; // Re-enabled to use the specific patient allowlist
 
 export const usePatientList = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -182,7 +179,7 @@ export const usePatientList = () => {
   }, []);
 
   // Load patients by cursor
-  const loadByCursor = useCallback(async (cursor: string, goingBack: boolean) => {
+  const loadByCursor = useCallback(async (cursor: string, _goingBack: boolean) => {
     const cacheKey = getCacheKey(cursor);
     const cached = patientListCache.get(cacheKey);
     

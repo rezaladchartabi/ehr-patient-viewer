@@ -3,15 +3,10 @@ import './App.css';
 import { SidebarPatients } from './components/SidebarPatients';
 import SearchBar from './components/SearchBar';
 import { EncounterDetails } from './components/EncounterDetails';
-import { useTheme } from 'next-themes';
 import { usePatientList } from './hooks/usePatientList';
 import { usePatientData, Patient } from './hooks/usePatientData';
 
-function App(): JSX.Element {
-  const { theme } = useTheme();
-  // const isDark = theme === 'dark';
-  // Theme toggle functionality (for future use)
-  // const toggleTheme = (): void => setTheme(isDark ? 'light' : 'dark');
+function App() {
 
   // Patient list management
   const {
@@ -114,7 +109,7 @@ function App(): JSX.Element {
             patients={patients}
             selectedId={currentPatient?.id}
             onSelect={handlePatientSelect}
-            renderItem={(p: Patient): JSX.Element => (
+            renderItem={(p: Patient) => (
               <div>
                 <div className="font-semibold">{p.family_name}</div>
                 <div className="text-xs text-gray-500 dark:text-neutral-400">
@@ -210,7 +205,7 @@ function App(): JSX.Element {
                     <td style={{ padding: '8px', border: '1px solid #ddd' }}>
                       {currentPatient.allergies && currentPatient.allergies.length > 0 ? (
                         <ul style={{ margin: 0, paddingLeft: '20px' }}>
-                          {currentPatient.allergies.map((allergy, index) => (
+                          {currentPatient.allergies.map((allergy, _index) => (
                             <li key={allergy.id} style={{ marginBottom: '4px' }}>
                               <strong>{allergy.code_display}</strong>
                               {allergy.clinical_status && ` (${allergy.clinical_status})`}
