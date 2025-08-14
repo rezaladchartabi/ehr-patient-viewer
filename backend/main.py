@@ -1198,6 +1198,14 @@ async def get_medication_requests(
     
     try:
         data = await fetch_from_fhir("/MedicationRequest", {k: v for k, v in params.items() if v is not None})
+        
+        # Apply mapping function to each entry to extract medication names properly
+        if data and "entry" in data:
+            for entry in data["entry"]:
+                if "resource" in entry:
+                    # Replace the resource with the mapped version
+                    entry["resource"] = _map_med_req(entry["resource"])
+                    
     except HTTPException as e:
         raise e
     except Exception as e:
