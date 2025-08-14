@@ -167,6 +167,9 @@ function App() {
               <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
               <span className="detail-item">Intent: {resource.intent || 'N/A'}</span>
               <span className="detail-item">Authored: {resource.authoredOn || 'N/A'}</span>
+              {resource.medicationCodeableConcept?.coding?.[0]?.code && (
+                <span className="detail-item">Code: {resource.medicationCodeableConcept.coding[0].code}</span>
+              )}
               {resource.dosageInstruction?.[0]?.text && (
                 <span className="detail-item">Dosage: {resource.dosageInstruction[0].text}</span>
               )}
