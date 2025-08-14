@@ -427,34 +427,7 @@ function App() {
                 )}
               </div>
               
-              {/* Past Medical History Section */}
-              <div className="mt-4">
-                <h3 className="font-medium text-sm mb-2">Past Medical History:</h3>
-                {pmhLoading ? (
-                  <div className="text-sm text-gray-500">Loading medical history...</div>
-                ) : pmh.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {pmh.slice(0, 10).map((condition, index) => (
-                      <span 
-                        key={index}
-                        className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full"
-                        title={condition.note || 'Clinical condition'}
-                      >
-                        {condition.condition_name.length > 40 
-                          ? condition.condition_name.substring(0, 40) + '...'
-                          : condition.condition_name}
-                      </span>
-                    ))}
-                    {pmh.length > 10 && (
-                      <span className="inline-block bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">
-                        +{pmh.length - 10} more
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-sm text-gray-500">No medical history available</div>
-                )}
-              </div>
+
               
               {/* Encounter Filter */}
               <div className="mt-4">
@@ -482,7 +455,8 @@ function App() {
                 { id: 'observations', label: 'Observations', count: resourceData.observations.length },
                 { id: 'medicationRequests', label: 'Med Requests', count: resourceData.medicationRequests.length },
                 { id: 'specimens', label: 'Specimens', count: resourceData.specimens.length },
-                { id: 'medicationDispenses', label: 'Med Dispense', count: resourceData.medicationDispenses.length }
+                { id: 'medicationDispenses', label: 'Med Dispense', count: resourceData.medicationDispenses.length },
+                { id: 'pmh', label: 'PMH', count: pmh.length }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -506,6 +480,45 @@ function App() {
               {renderResourceTab('medicationRequests', resourceData.medicationRequests, 'medicationRequests')}
               {renderResourceTab('specimens', resourceData.specimens, 'specimens')}
               {renderResourceTab('medicationDispenses', resourceData.medicationDispenses, 'medicationDispenses')}
+              
+              {/* PMH Tab Content */}
+              {activeTab === 'pmh' && (
+                <div className="p-4">
+                  <h3 className="font-semibold mb-3">Past Medical History ({pmh.length})</h3>
+                  {pmhLoading ? (
+                    <div className="text-gray-500">Loading medical history...</div>
+                  ) : pmh.length > 0 ? (
+                    <div className="space-y-3">
+                      {pmh
+                        .sort((a, b) => {
+                          // Sort by chart_time, most recent first
+                          const dateA = new Date(a.chart_time || a.recorded_date || '1900-01-01').getTime();
+                          const dateB = new Date(b.chart_time || b.recorded_date || '1900-01-01').getTime();
+                          return dateB - dateA;
+                        })
+                        .map((condition, index) => (
+                        <div key={index} className="resource-item">
+                          <div className="resource-title">
+                            {condition.condition_name}
+                          </div>
+                          <div className="resource-details">
+                            <span className="detail-item">
+                              Chart Date: {condition.chart_time ? new Date(condition.chart_time).toLocaleDateString() : 
+                                         (condition.recorded_date ? new Date(condition.recorded_date).toLocaleDateString() : 'Unknown')}
+                            </span>
+                            {condition.note && (
+                              <span className="detail-item">Source: {condition.note}</span>
+                            )}
+                            <span className="detail-item">Category: {condition.category || 'Medical History'}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-gray-500">No medical history available</div>
+                  )}
+                </div>
+              )}
             </div>
           </>
         ) : (

@@ -807,14 +807,15 @@ class LocalDatabase:
                     conn.execute("""
                         INSERT INTO conditions (
                             id, patient_id, code_display, category, status, 
-                            last_updated, created_at, hash
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            encounter_id, last_updated, created_at, hash
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         clinical_pmh_id,
                         patient_id,
                         condition_name,
                         "medical-history",
                         f"Extracted from clinical note: {source_note_id}",
+                        chart_time or current_time,  # Store chart_time in encounter_id field
                         current_time,
                         current_time,
                         hashlib.md5(f"{patient_id}-{condition_name}".encode()).hexdigest()
@@ -832,20 +833,23 @@ class LocalDatabase:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.execute("""
-                    SELECT id, code_display, category, status, last_updated
+                    SELECT id, code_display, category, status, last_updated, encounter_id
                     FROM conditions 
                     WHERE patient_id = ? AND category = 'medical-history'
-                    ORDER BY last_updated DESC
+                    ORDER BY encounter_id DESC, last_updated DESC
                 """, (patient_id,))
                 
                 conditions = []
                 for row in cursor.fetchall():
+                    # Use encounter_id as chart_time if available, otherwise use last_updated
+                    chart_time = row[5] if row[5] else row[4]
                     conditions.append({
                         'id': row[0],
                         'condition_name': row[1],
                         'category': row[2],
                         'note': row[3],
-                        'recorded_date': row[4]
+                        'recorded_date': row[4],
+                        'chart_time': chart_time
                     })
                 
                 return conditions
