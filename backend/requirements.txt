@@ -8,6 +8,8 @@ httpx==0.25.2
 # Data processing and validation
 pydantic==2.5.0
 python-multipart==0.0.6
+pandas==2.1.4
+openpyxl==3.1.2
 
 # Database
 # sqlite3 is built-in to Python, no need to install

@@ -20,10 +20,12 @@ from contextlib import asynccontextmanager
 try:
     from local_db import LocalDatabase
     from sync_service import SyncService
+    from allergy_processor import AllergyProcessor
 except ImportError:
     # When imported as a package (e.g., uvicorn backend.main:app)
     from backend.local_db import LocalDatabase
     from backend.sync_service import SyncService
+    from backend.allergy_processor import AllergyProcessor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -1959,6 +1961,82 @@ async def get_fhir_id_by_subject(subject_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to find patient: {str(e)}")
+
+# Allergy processing endpoints
+@app.post("/allergies/process-xlsx")
+async def process_allergies_from_xlsx(request: Request):
+    """Process XLSX file with clinical notes to extract patient allergies"""
+    try:
+        # This endpoint expects the XLSX file to be uploaded
+        # For now, we'll return instructions on how to use it
+        return {
+            "status": "ready",
+            "message": "Allergy processor is ready. Upload your XLSX file to process allergies.",
+            "instructions": {
+                "required_columns": ["note_id", "subject_id", "text"],
+                "optional_columns": ["hadm_id", "note_type", "charttime", "storetime"],
+                "usage": "Upload XLSX file with clinical notes data to extract patient allergies"
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Allergy processor error: {str(e)}")
+
+@app.post("/allergies/extract-from-text")
+async def extract_allergies_from_text(request: Request):
+    """Extract allergies from clinical note text"""
+    try:
+        data = await request.json()
+        text = data.get('text', '')
+        
+        if not text:
+            raise HTTPException(status_code=400, detail="Text field is required")
+        
+        processor = AllergyProcessor()
+        allergies = processor.extract_allergies_from_text(text)
+        
+        return {
+            "allergies": allergies,
+            "count": len(allergies),
+            "extracted_at": time.strftime('%Y-%m-%d %H:%M:%S')
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to extract allergies: {str(e)}")
+
+@app.get("/allergies/patient/{subject_id}")
+async def get_patient_allergies_by_subject_id(subject_id: str):
+    """Get allergies for a patient by Subject ID"""
+    try:
+        # First, map Subject ID to FHIR ID
+        if not local_db:
+            raise HTTPException(status_code=500, detail="Local database not available")
+        
+        patients = local_db.get_all_patients()
+        fhir_id = None
+        
+        for patient in patients:
+            if patient.get('identifier') == subject_id:
+                fhir_id = patient.get('id')
+                break
+        
+        if not fhir_id:
+            raise HTTPException(status_code=404, detail=f"Patient with Subject ID {subject_id} not found")
+        
+        # TODO: Once allergies are stored in database, retrieve them here
+        # For now, return placeholder
+        return {
+            "subject_id": subject_id,
+            "fhir_id": fhir_id,
+            "allergies": [],
+            "message": "Allergy data will be available after XLSX processing is complete"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get patient allergies: {str(e)}")
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
