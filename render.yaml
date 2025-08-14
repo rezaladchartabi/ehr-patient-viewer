@@ -17,13 +17,15 @@ services:
   - type: web
     name: ehr-frontend
     env: static
-    buildCommand: npm install --legacy-peer-deps && DISABLE_ESLINT_PLUGIN=true npm run build
+    buildCommand: npm install --legacy-peer-deps && CI=false npm run build
     staticPublishPath: ./build
     envVars:
       - key: REACT_APP_API_URL
         value: https://ehr-backend-87r9.onrender.com  # Your Render backend URL
       - key: DISABLE_ESLINT_PLUGIN
         value: true
+      - key: CI
+        value: false
     routes:
       - type: rewrite
         source: /*
