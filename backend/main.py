@@ -375,7 +375,13 @@ async def encounter_medications(patient: str, encounter: str, start: Optional[st
     """
     # Requests
     req_params = {"patient": patient, "encounter": encounter, "_count": 50}
-    req_entries = await _fetch_all_pages("/MedicationRequest", req_params)
+    # Some FHIR servers reject combined patient+encounter search with 400.
+    # Fall back to patient-only query on any client error.
+    try:
+        req_entries = await _fetch_all_pages("/MedicationRequest", req_params)
+    except Exception:
+        logger.warning("MedicationRequest search with patient+encounter failed; falling back to patient-only")
+        req_entries = []
     if not req_entries:
         all_req = await _fetch_all_pages("/MedicationRequest", {"patient": patient, "_count": 50})
         req = [_map_med_req(e.get("resource", {})) for e in all_req]
@@ -387,7 +393,11 @@ async def encounter_medications(patient: str, encounter: str, start: Optional[st
 
     # Administrations
     adm_params = {"patient": patient, "encounter": encounter, "_count": 50}
-    adm_entries = await _fetch_all_pages("/MedicationAdministration", adm_params)
+    try:
+        adm_entries = await _fetch_all_pages("/MedicationAdministration", adm_params)
+    except Exception:
+        logger.warning("MedicationAdministration search with patient+encounter failed; falling back to patient-only")
+        adm_entries = []
     if not adm_entries:
         all_adm = await _fetch_all_pages("/MedicationAdministration", {"patient": patient, "_count": 50})
         adm = [_map_med_admin(e.get("resource", {})) for e in all_adm]
