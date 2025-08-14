@@ -1904,6 +1904,62 @@ async def start_periodic_sync():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to start periodic sync: {str(e)}")
 
+@app.get("/mapping/subject-to-fhir")
+async def get_subject_id_mapping():
+    """Get mapping between Subject IDs and FHIR Patient IDs"""
+    try:
+        if not local_db:
+            raise HTTPException(status_code=500, detail="Local database not available")
+        
+        # Get all patients from local database
+        patients = local_db.get_all_patients()
+        
+        # Create mapping dictionary
+        subject_to_fhir = {}
+        fhir_to_subject = {}
+        
+        for patient in patients:
+            subject_id = patient.get('identifier')
+            fhir_id = patient.get('id')
+            
+            if subject_id and fhir_id:
+                subject_to_fhir[subject_id] = fhir_id
+                fhir_to_subject[fhir_id] = subject_id
+        
+        return {
+            "subject_to_fhir": subject_to_fhir,
+            "fhir_to_subject": fhir_to_subject,
+            "total_patients": len(subject_to_fhir)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create mapping: {str(e)}")
+
+@app.get("/mapping/subject-to-fhir/{subject_id}")
+async def get_fhir_id_by_subject(subject_id: str):
+    """Get FHIR Patient ID by Subject ID"""
+    try:
+        if not local_db:
+            raise HTTPException(status_code=500, detail="Local database not available")
+        
+        # Get patient by identifier (subject ID)
+        patients = local_db.get_all_patients()
+        
+        for patient in patients:
+            if patient.get('identifier') == subject_id:
+                return {
+                    "subject_id": subject_id,
+                    "fhir_id": patient.get('id'),
+                    "patient_name": patient.get('family_name')
+                }
+        
+        raise HTTPException(status_code=404, detail=f"Patient with Subject ID {subject_id} not found")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to find patient: {str(e)}")
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
