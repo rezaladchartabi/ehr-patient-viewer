@@ -381,13 +381,25 @@ def _map_med_req(res: Dict[str, Any]) -> Dict[str, Any]:
     route_code = ''
     route_display = ''
     route_system = ''
+    timing_code = ''
+    timing_display = ''
+    timing_system = ''
+    
     if res.get("dosageInstruction") and len(res["dosageInstruction"]) > 0:
         dosage = res["dosageInstruction"][0]
+        # Extract route
         if dosage.get("route") and dosage["route"].get("coding") and len(dosage["route"]["coding"]) > 0:
             route_coding = dosage["route"]["coding"][0]
             route_code = route_coding.get("code", '')
             route_display = route_coding.get("display", route_code)
             route_system = route_coding.get("system", '')
+        
+        # Extract timing
+        if dosage.get("timing") and dosage["timing"].get("code") and dosage["timing"]["code"].get("coding") and len(dosage["timing"]["code"]["coding"]) > 0:
+            timing_coding = dosage["timing"]["code"]["coding"][0]
+            timing_code = timing_coding.get("code", '')
+            timing_display = timing_coding.get("display", timing_code)
+            timing_system = timing_coding.get("system", '')
     
     enc_ref = ((res.get("encounter") or {}).get("reference") or '')
     return {
@@ -401,6 +413,9 @@ def _map_med_req(res: Dict[str, Any]) -> Dict[str, Any]:
         "route_code": route_code,
         "route_display": route_display,
         "route_system": route_system,
+        "timing_code": timing_code,
+        "timing_display": timing_display,
+        "timing_system": timing_system,
         "status": res.get("status", ''),
         "intent": res.get("intent", ''),
         "priority": res.get("priority", ''),
@@ -429,11 +444,34 @@ def _map_med_admin(res: Dict[str, Any]) -> Dict[str, Any]:
     route_code = ''
     route_display = ''
     route_system = ''
-    if res.get("dosage") and res["dosage"].get("route") and res["dosage"]["route"].get("coding") and len(res["dosage"]["route"]["coding"]) > 0:
-        route_coding = res["dosage"]["route"]["coding"][0]
-        route_code = route_coding.get("code", '')
-        route_display = route_coding.get("display", route_code)
-        route_system = route_coding.get("system", '')
+    timing_code = ''
+    timing_display = ''
+    timing_system = ''
+    
+    if res.get("dosage"):
+        dosage = res["dosage"]
+        # Extract route
+        if dosage.get("route") and dosage["route"].get("coding") and len(dosage["route"]["coding"]) > 0:
+            route_coding = dosage["route"]["coding"][0]
+            route_code = route_coding.get("code", '')
+            route_display = route_coding.get("display", route_code)
+            route_system = route_coding.get("system", '')
+        
+        # Extract timing (if available in dosage)
+        if dosage.get("timing") and dosage["timing"].get("code") and dosage["timing"]["code"].get("coding") and len(dosage["timing"]["code"]["coding"]) > 0:
+            timing_coding = dosage["timing"]["code"]["coding"][0]
+            timing_code = timing_coding.get("code", '')
+            timing_display = timing_coding.get("display", timing_code)
+            timing_system = timing_coding.get("system", '')
+    
+    # Also check if there's a dosageInstruction field (alternative location)
+    if not timing_code and res.get("dosageInstruction") and len(res["dosageInstruction"]) > 0:
+        dosage_inst = res["dosageInstruction"][0]
+        if dosage_inst.get("timing") and dosage_inst["timing"].get("code") and dosage_inst["timing"]["code"].get("coding") and len(dosage_inst["timing"]["code"]["coding"]) > 0:
+            timing_coding = dosage_inst["timing"]["code"]["coding"][0]
+            timing_code = timing_coding.get("code", '')
+            timing_display = timing_coding.get("display", timing_code)
+            timing_system = timing_coding.get("system", '')
     
     return {
         "id": res.get("id"),
@@ -446,6 +484,9 @@ def _map_med_admin(res: Dict[str, Any]) -> Dict[str, Any]:
         "route_code": route_code,
         "route_display": route_display,
         "route_system": route_system,
+        "timing_code": timing_code,
+        "timing_display": timing_display,
+        "timing_system": timing_system,
         "status": res.get("status", ''),
         "effective_start": res.get("effectiveDateTime") or ((res.get("effectivePeriod") or {}).get("start")) or '',
         "effective_end": ((res.get("effectivePeriod") or {}).get("end")) or '',
@@ -460,17 +501,29 @@ def _map_med_dispense(res: Dict[str, Any]) -> Dict[str, Any]:
     quantity = res.get("quantity") or {}
     days_supply = res.get("daysSupply") or {}
     
-    # Extract route information from dosageInstruction
+    # Extract route and timing information from dosageInstruction
     route_code = ''
     route_display = ''
     route_system = ''
+    timing_code = ''
+    timing_display = ''
+    timing_system = ''
+    
     if res.get("dosageInstruction") and len(res["dosageInstruction"]) > 0:
         dosage = res["dosageInstruction"][0]
+        # Extract route
         if dosage.get("route") and dosage["route"].get("coding") and len(dosage["route"]["coding"]) > 0:
             route_coding = dosage["route"]["coding"][0]
             route_code = route_coding.get("code", '')
             route_display = route_coding.get("display", route_code)
             route_system = route_coding.get("system", '')
+        
+        # Extract timing
+        if dosage.get("timing") and dosage["timing"].get("code") and dosage["timing"]["code"].get("coding") and len(dosage["timing"]["code"]["coding"]) > 0:
+            timing_coding = dosage["timing"]["code"]["coding"][0]
+            timing_code = timing_coding.get("code", '')
+            timing_display = timing_coding.get("display", timing_code)
+            timing_system = timing_coding.get("system", '')
     
     return {
         "id": res.get("id"),
@@ -483,6 +536,9 @@ def _map_med_dispense(res: Dict[str, Any]) -> Dict[str, Any]:
         "route_code": route_code,
         "route_display": route_display,
         "route_system": route_system,
+        "timing_code": timing_code,
+        "timing_display": timing_display,
+        "timing_system": timing_system,
         "status": res.get("status", ''),
         "quantity": quantity,
         "daysSupply": days_supply,
