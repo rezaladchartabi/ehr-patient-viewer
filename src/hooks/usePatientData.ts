@@ -394,14 +394,16 @@ export const usePatientData = () => {
       ]);
 
       // Process the data
+      const conditionsForEncounter = conditions.filter(c => c.encounter_id === encounterId);
       const encounterData: EncounterData = {
-        conditions: conditions.filter(c => c.encounter_id === encounterId),
+        // Fallback to all patient conditions if none are explicitly linked to this encounter
+        conditions: conditionsForEncounter.length > 0 ? conditionsForEncounter : conditions,
         medicationRequests: medsData.requests || [],
         medicationAdministrations: medsData.administrations || [],
         observations: obsData.observations || [],
         procedures: procData.procedures || [],
         specimens: specData.specimens || [],
-        note: medsData.note || obsData.note || procData.note || specData.note
+        note: (conditionsForEncounter.length === 0 ? 'Showing patient-wide conditions (no encounter-linked conditions found). ' : '') + (medsData.note || obsData.note || procData.note || specData.note || '')
       };
 
       // Cache the encounter data
