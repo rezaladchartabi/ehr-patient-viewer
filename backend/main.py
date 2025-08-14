@@ -379,6 +379,33 @@ def _map_med_admin(res: Dict[str, Any]) -> Dict[str, Any]:
         "effective_end": ((res.get("effectivePeriod") or {}).get("end")) or '',
     }
 
+def _map_med_dispense(res: Dict[str, Any]) -> Dict[str, Any]:
+    c = (res.get("medicationCodeableConcept") or {}).get("coding") or [{}]
+    coding = c[0]
+    ctx_ref = ((res.get("context") or {}).get("reference") or '')
+    
+    # Extract quantity information
+    quantity = res.get("quantity") or {}
+    days_supply = res.get("daysSupply") or {}
+    
+    return {
+        "id": res.get("id"),
+        "patient_id": ((res.get("subject") or {}).get("reference") or '').split('/')[-1],
+        "encounter_id": ctx_ref.split('/')[-1] if ctx_ref else '',
+        "medicationCodeableConcept": res.get("medicationCodeableConcept"),
+        "medication_code": coding.get("code", ''),
+        "medication_display": coding.get("display") or coding.get("code") or 'Unknown Medication',
+        "medication_system": coding.get("system", ''),
+        "status": res.get("status", ''),
+        "quantity": quantity,
+        "daysSupply": days_supply,
+        "when_prepared": res.get("whenPrepared", ''),
+        "when_handed_over": res.get("whenHandedOver", ''),
+        "performer": res.get("performer", []),
+        "location": res.get("location"),
+        "dosageInstruction": res.get("dosageInstruction", []),
+    }
+
 def _within(ts: str, start: Optional[str], end: Optional[str]) -> bool:
     if not ts:
         return False
@@ -435,10 +462,26 @@ async def encounter_medications(patient: str, encounter: str, start: Optional[st
         adm = [_map_med_admin(e.get("resource", {})) for e in adm_entries]
         adm_note = None
 
+    # Dispenses
+    disp_params = {"patient": patient, "encounter": encounter, "_count": 50}
+    try:
+        disp_entries = await _fetch_all_pages("/MedicationDispense", disp_params)
+    except Exception:
+        logger.warning("MedicationDispense search with patient+encounter failed; falling back to patient-only")
+        disp_entries = []
+    if not disp_entries:
+        all_disp = await _fetch_all_pages("/MedicationDispense", {"patient": patient, "_count": 50})
+        disp = [_map_med_dispense(e.get("resource", {})) for e in all_disp]
+        disp = [d for d in disp if d.get("encounter_id") == encounter.split('/')[-1] or _within(d.get("when_handed_over", ''), start, end)]
+        disp_note = "inferred-by-time-window"
+    else:
+        disp = [_map_med_dispense(e.get("resource", {})) for e in disp_entries]
+        disp_note = None
+
     note = None
-    if req_note or adm_note:
+    if req_note or adm_note or disp_note:
         note = "results include items inferred by time window"
-    return {"requests": req, "administrations": adm, "note": note}
+    return {"requests": req, "administrations": adm, "dispenses": disp, "note": note}
 
 @app.get("/encounter/observations")
 async def encounter_observations(patient: str, encounter: str, start: Optional[str] = None, end: Optional[str] = None):
