@@ -2143,6 +2143,43 @@ async def get_patient_pmh_by_subject_id(subject_id: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get patient PMH: {str(e)}")
 
+@app.get("/pmh/patient/{subject_id}")
+async def get_patient_pmh_by_subject_id(subject_id: str):
+    """Get Past Medical History for a patient by Subject ID"""
+    try:
+        # First, map Subject ID to FHIR ID
+        if not local_db:
+            raise HTTPException(status_code=500, detail="Local database not available")
+        
+        patients = local_db.get_all_patients()
+        fhir_id = None
+        patient_name = None
+        
+        for patient in patients:
+            if patient.get('identifier') == subject_id:
+                fhir_id = patient.get('id')
+                patient_name = patient.get('family_name')
+                break
+        
+        if not fhir_id:
+            raise HTTPException(status_code=404, detail=f"Patient with Subject ID {subject_id} not found")
+        
+        # Get PMH from database
+        pmh_conditions = local_db.get_patient_pmh(fhir_id)
+        
+        return {
+            "subject_id": subject_id,
+            "fhir_id": fhir_id,
+            "patient_name": patient_name,
+            "pmh_conditions": pmh_conditions,
+            "count": len(pmh_conditions)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get patient PMH: {str(e)}")
+
 @app.get("/local/patients/{patient_id}/pmh")
 async def get_patient_pmh_by_fhir_id(patient_id: str):
     """Get Past Medical History for a patient by FHIR Patient ID"""
