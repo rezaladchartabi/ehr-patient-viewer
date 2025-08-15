@@ -317,8 +317,138 @@ async def _auto_sync_on_startup():
         logger.info("Executing startup sync...")
         result = await sync_service.sync_all_resources()
         logger.info(f"Startup sync completed: {result}")
+        
+        # Auto-upload clinical data (allergies and PMH) if they don't exist
+        await _auto_upload_clinical_data()
+        
     except Exception as e:
         logger.error(f"Startup sync failed: {e}")
+
+async def _auto_upload_clinical_data():
+    """Automatically upload clinical data (allergies and PMH) if they don't exist"""
+    try:
+        logger.info("Checking if clinical data needs to be uploaded...")
+        
+        # Check if allergies exist in database
+        allergies_count = 0
+        pmh_count = 0
+        
+        try:
+            # Get a sample patient to check data
+            patients = local_db.get_all_patients(limit=1)
+            if patients:
+                sample_patient_id = patients[0]['id']
+                allergies = local_db.get_patient_allergies(sample_patient_id)
+                pmh_conditions = local_db.get_patient_pmh(sample_patient_id)
+                allergies_count = len(allergies)
+                pmh_count = len(pmh_conditions)
+        except Exception as e:
+            logger.warning(f"Could not check existing clinical data: {e}")
+        
+        logger.info(f"Current clinical data: {allergies_count} allergies, {pmh_count} PMH conditions")
+        
+        # Upload allergies if none exist
+        if allergies_count == 0:
+            logger.info("No allergies found, uploading allergies data...")
+            await _upload_allergies_data()
+        else:
+            logger.info(f"Allergies already exist ({allergies_count} found), skipping upload")
+        
+        # Upload PMH if none exist
+        if pmh_count == 0:
+            logger.info("No PMH found, uploading PMH data...")
+            await _upload_pmh_data()
+        else:
+            logger.info(f"PMH already exists ({pmh_count} found), skipping upload")
+            
+    except Exception as e:
+        logger.error(f"Auto-upload clinical data failed: {e}")
+
+async def _upload_allergies_data():
+    """Upload allergies data from JSON file"""
+    try:
+        import glob
+        import os
+        
+        # Find the most recent allergies extraction file
+        allergies_files = glob.glob("extracted_allergies_*.json")
+        if not allergies_files:
+            logger.warning("No allergies extraction files found")
+            return
+        
+        latest_file = sorted(allergies_files)[-1]
+        logger.info(f"Uploading allergies from {latest_file}")
+        
+        with open(latest_file, 'r') as f:
+            data = json.load(f)
+        
+        patient_allergies = data.get('patient_allergies', {})
+        
+        # Upload to local database
+        success_count = 0
+        for subject_id, allergies in patient_allergies.items():
+            for allergy in allergies:
+                allergy_name = allergy.get('allergy_name')
+                source_note_id = allergy.get('source_note_id')
+                chart_time = allergy.get('chart_time')
+                
+                if allergy_name and source_note_id:
+                    success = local_db.upsert_clinical_allergy(
+                        subject_id=subject_id,
+                        allergy_name=allergy_name,
+                        source_note_id=source_note_id,
+                        chart_time=chart_time
+                    )
+                    if success:
+                        success_count += 1
+        
+        logger.info(f"Successfully uploaded {success_count} allergies to local database")
+        
+    except Exception as e:
+        logger.error(f"Failed to upload allergies data: {e}")
+
+async def _upload_pmh_data():
+    """Upload PMH data from JSON file"""
+    try:
+        import glob
+        import os
+        
+        # Find the most recent PMH extraction file
+        pmh_files = glob.glob("extracted_pmh_*.json")
+        if not pmh_files:
+            logger.warning("No PMH extraction files found")
+            return
+        
+        latest_file = sorted(pmh_files)[-1]
+        logger.info(f"Uploading PMH from {latest_file}")
+        
+        with open(latest_file, 'r') as f:
+            data = json.load(f)
+        
+        patient_pmh = data.get('patient_pmh', {})
+        
+        # Upload to local database
+        success_count = 0
+        for subject_id, conditions in patient_pmh.items():
+            for condition in conditions:
+                condition_name = condition.get('condition_name')
+                source_note_id = condition.get('source_note_id')
+                chart_time = condition.get('chart_time')
+                
+                if condition_name and source_note_id:
+                    success = local_db.upsert_clinical_pmh(
+                        subject_id=subject_id,
+                        condition_name=condition_name,
+                        source_note_id=source_note_id,
+                        chart_time=chart_time
+                    )
+                    if success:
+                        success_count += 1
+        
+        logger.info(f"Successfully uploaded {success_count} PMH conditions to local database")
+        
+    except Exception as e:
+        logger.error(f"Failed to upload PMH data: {e}")
 
 @app.on_event("shutdown")
 async def _shutdown_client():
