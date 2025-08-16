@@ -28,7 +28,8 @@ class ChatbotApiService {
   private baseUrl: string;
 
   constructor() {
-    this.baseUrl = process.env.REACT_APP_API_BASE_URL || 'https://ehr-backend-87r9.onrender.com';
+    // Use local backend for chatbot during development
+    this.baseUrl = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000';
   }
 
   async sendMessage(request: ChatbotRequest): Promise<ChatbotResponse> {
