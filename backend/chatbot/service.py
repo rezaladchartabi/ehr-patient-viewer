@@ -90,28 +90,41 @@ class ChatbotService:
             }
     
     async def _get_patient_data(self, patient_id: str) -> Dict[str, Any]:
-        """Get comprehensive patient data from database"""
+        """Get comprehensive patient data from database and FHIR server"""
         if patient_id in self.patient_cache:
             return self.patient_cache[patient_id]
         
         try:
-            # Initialize patient data structure
+            # Initialize comprehensive patient data structure
             patient_data = {
                 "id": patient_id,
+                "basic_info": {},
                 "conditions": [],
                 "medications": [],
                 "allergies": [],
                 "observations": [],
                 "encounters": [],
-                "pmh": []
+                "procedures": [],
+                "specimens": [],
+                "pmh": [],
+                "medication_requests": [],
+                "medication_administrations": [],
+                "medication_dispenses": []
             }
+            
+            # Get basic patient info from local database
+            try:
+                basic_info = await self._fetch_patient_basic_info(patient_id)
+                if basic_info:
+                    patient_data["basic_info"] = basic_info
+            except Exception as e:
+                logger.warning(f"Failed to fetch basic info for patient {patient_id}: {e}")
             
             # Get PMH data from database
             try:
                 pmh_response = await self._fetch_patient_pmh(patient_id)
                 if pmh_response and "pmh_conditions" in pmh_response:
                     patient_data["pmh"] = pmh_response["pmh_conditions"]
-                    # Don't add to conditions to avoid duplicates
             except Exception as e:
                 logger.warning(f"Failed to fetch PMH data for patient {patient_id}: {e}")
             
@@ -123,22 +136,116 @@ class ChatbotService:
             except Exception as e:
                 logger.warning(f"Failed to fetch allergies for patient {patient_id}: {e}")
             
-            # Cache the data
+            # Get FHIR resources
+            fhir_patient_ref = f"Patient/{patient_id}"
+            
+            # Get conditions from FHIR
+            try:
+                conditions_response = await self._fetch_fhir_conditions(fhir_patient_ref)
+                if conditions_response and "entry" in conditions_response:
+                    patient_data["conditions"] = [entry["resource"] for entry in conditions_response["entry"]]
+            except Exception as e:
+                logger.warning(f"Failed to fetch conditions for patient {patient_id}: {e}")
+            
+            # Get medication requests from FHIR
+            try:
+                med_requests_response = await self._fetch_fhir_medication_requests(fhir_patient_ref)
+                if med_requests_response and "entry" in med_requests_response:
+                    patient_data["medication_requests"] = [entry["resource"] for entry in med_requests_response["entry"]]
+            except Exception as e:
+                logger.warning(f"Failed to fetch medication requests for patient {patient_id}: {e}")
+            
+            # Get medication administrations from FHIR
+            try:
+                med_admins_response = await self._fetch_fhir_medication_administrations(fhir_patient_ref)
+                if med_admins_response and "entry" in med_admins_response:
+                    patient_data["medication_administrations"] = [entry["resource"] for entry in med_admins_response["entry"]]
+            except Exception as e:
+                logger.warning(f"Failed to fetch medication administrations for patient {patient_id}: {e}")
+            
+            # Get medication dispenses from FHIR
+            try:
+                med_dispenses_response = await self._fetch_fhir_medication_dispenses(fhir_patient_ref)
+                if med_dispenses_response and "entry" in med_dispenses_response:
+                    patient_data["medication_dispenses"] = [entry["resource"] for entry in med_dispenses_response["entry"]]
+            except Exception as e:
+                logger.warning(f"Failed to fetch medication dispenses for patient {patient_id}: {e}")
+            
+            # Get observations from FHIR
+            try:
+                observations_response = await self._fetch_fhir_observations(fhir_patient_ref)
+                if observations_response and "entry" in observations_response:
+                    patient_data["observations"] = [entry["resource"] for entry in observations_response["entry"]]
+            except Exception as e:
+                logger.warning(f"Failed to fetch observations for patient {patient_id}: {e}")
+            
+            # Get encounters from FHIR
+            try:
+                encounters_response = await self._fetch_fhir_encounters(fhir_patient_ref)
+                if encounters_response and "entry" in encounters_response:
+                    patient_data["encounters"] = [entry["resource"] for entry in encounters_response["entry"]]
+            except Exception as e:
+                logger.warning(f"Failed to fetch encounters for patient {patient_id}: {e}")
+            
+            # Get procedures from FHIR
+            try:
+                procedures_response = await self._fetch_fhir_procedures(fhir_patient_ref)
+                if procedures_response and "entry" in procedures_response:
+                    patient_data["procedures"] = [entry["resource"] for entry in procedures_response["entry"]]
+            except Exception as e:
+                logger.warning(f"Failed to fetch procedures for patient {patient_id}: {e}")
+            
+            # Get specimens from FHIR
+            try:
+                specimens_response = await self._fetch_fhir_specimens(fhir_patient_ref)
+                if specimens_response and "entry" in specimens_response:
+                    patient_data["specimens"] = [entry["resource"] for entry in specimens_response["entry"]]
+            except Exception as e:
+                logger.warning(f"Failed to fetch specimens for patient {patient_id}: {e}")
+            
+            # Combine all medication data
+            patient_data["medications"] = (
+                patient_data["medication_requests"] + 
+                patient_data["medication_administrations"] + 
+                patient_data["medication_dispenses"]
+            )
+            
+            # Cache the comprehensive data
             self.patient_cache[patient_id] = patient_data
-            logger.info(f"Fetched patient data for {patient_id}: {len(patient_data['pmh'])} PMH conditions, {len(patient_data['allergies'])} allergies")
+            
+            # Log summary
+            logger.info(f"Fetched comprehensive patient data for {patient_id}:")
+            logger.info(f"  - Basic info: {'Yes' if patient_data['basic_info'] else 'No'}")
+            logger.info(f"  - PMH: {len(patient_data['pmh'])} conditions")
+            logger.info(f"  - Allergies: {len(patient_data['allergies'])} allergies")
+            logger.info(f"  - FHIR Conditions: {len(patient_data['conditions'])} conditions")
+            logger.info(f"  - Medication Requests: {len(patient_data['medication_requests'])} requests")
+            logger.info(f"  - Medication Administrations: {len(patient_data['medication_administrations'])} administrations")
+            logger.info(f"  - Medication Dispenses: {len(patient_data['medication_dispenses'])} dispenses")
+            logger.info(f"  - Observations: {len(patient_data['observations'])} observations")
+            logger.info(f"  - Encounters: {len(patient_data['encounters'])} encounters")
+            logger.info(f"  - Procedures: {len(patient_data['procedures'])} procedures")
+            logger.info(f"  - Specimens: {len(patient_data['specimens'])} specimens")
+            
             return patient_data
             
         except Exception as e:
-            logger.error(f"Error fetching patient data for {patient_id}: {e}")
+            logger.error(f"Error fetching comprehensive patient data for {patient_id}: {e}")
             # Return empty structure on error
             return {
                 "id": patient_id,
+                "basic_info": {},
                 "conditions": [],
                 "medications": [],
                 "allergies": [],
                 "observations": [],
                 "encounters": [],
-                "pmh": []
+                "procedures": [],
+                "specimens": [],
+                "pmh": [],
+                "medication_requests": [],
+                "medication_administrations": [],
+                "medication_dispenses": []
             }
     
     async def _fetch_patient_pmh(self, patient_id: str) -> Dict[str, Any]:
@@ -178,6 +285,100 @@ class ChatbotService:
         except Exception as e:
             logger.error(f"Error fetching allergies data: {e}")
             return {"allergies": []}
+    
+    async def _fetch_patient_basic_info(self, patient_id: str) -> Dict[str, Any]:
+        """Fetch basic patient information from the database"""
+        try:
+            from main import local_db
+            if local_db:
+                patient = local_db.get_patient_with_allergies(patient_id)
+                return patient if patient else {}
+            else:
+                logger.error("Local database not available")
+                return {}
+        except Exception as e:
+            logger.error(f"Error fetching basic patient info: {e}")
+            return {}
+    
+    async def _fetch_fhir_conditions(self, patient_ref: str) -> Dict[str, Any]:
+        """Fetch conditions from FHIR server"""
+        try:
+            from main import fetch_from_fhir
+            params = {"patient": patient_ref, "_count": 100}
+            return await fetch_from_fhir("/Condition", params)
+        except Exception as e:
+            logger.error(f"Error fetching FHIR conditions: {e}")
+            return {}
+    
+    async def _fetch_fhir_medication_requests(self, patient_ref: str) -> Dict[str, Any]:
+        """Fetch medication requests from FHIR server"""
+        try:
+            from main import fetch_from_fhir
+            params = {"patient": patient_ref, "_count": 100}
+            return await fetch_from_fhir("/MedicationRequest", params)
+        except Exception as e:
+            logger.error(f"Error fetching FHIR medication requests: {e}")
+            return {}
+    
+    async def _fetch_fhir_medication_administrations(self, patient_ref: str) -> Dict[str, Any]:
+        """Fetch medication administrations from FHIR server"""
+        try:
+            from main import fetch_from_fhir
+            params = {"patient": patient_ref, "_count": 100}
+            return await fetch_from_fhir("/MedicationAdministration", params)
+        except Exception as e:
+            logger.error(f"Error fetching FHIR medication administrations: {e}")
+            return {}
+    
+    async def _fetch_fhir_medication_dispenses(self, patient_ref: str) -> Dict[str, Any]:
+        """Fetch medication dispenses from FHIR server"""
+        try:
+            from main import fetch_from_fhir
+            params = {"patient": patient_ref, "_count": 100}
+            return await fetch_from_fhir("/MedicationDispense", params)
+        except Exception as e:
+            logger.error(f"Error fetching FHIR medication dispenses: {e}")
+            return {}
+    
+    async def _fetch_fhir_observations(self, patient_ref: str) -> Dict[str, Any]:
+        """Fetch observations from FHIR server"""
+        try:
+            from main import fetch_from_fhir
+            params = {"patient": patient_ref, "_count": 100}
+            return await fetch_from_fhir("/Observation", params)
+        except Exception as e:
+            logger.error(f"Error fetching FHIR observations: {e}")
+            return {}
+    
+    async def _fetch_fhir_encounters(self, patient_ref: str) -> Dict[str, Any]:
+        """Fetch encounters from FHIR server"""
+        try:
+            from main import fetch_from_fhir
+            params = {"patient": patient_ref, "_count": 100}
+            return await fetch_from_fhir("/Encounter", params)
+        except Exception as e:
+            logger.error(f"Error fetching FHIR encounters: {e}")
+            return {}
+    
+    async def _fetch_fhir_procedures(self, patient_ref: str) -> Dict[str, Any]:
+        """Fetch procedures from FHIR server"""
+        try:
+            from main import fetch_from_fhir
+            params = {"patient": patient_ref, "_count": 100}
+            return await fetch_from_fhir("/Procedure", params)
+        except Exception as e:
+            logger.error(f"Error fetching FHIR procedures: {e}")
+            return {}
+    
+    async def _fetch_fhir_specimens(self, patient_ref: str) -> Dict[str, Any]:
+        """Fetch specimens from FHIR server"""
+        try:
+            from main import fetch_from_fhir
+            params = {"patient": patient_ref, "_count": 100}
+            return await fetch_from_fhir("/Specimen", params)
+        except Exception as e:
+            logger.error(f"Error fetching FHIR specimens: {e}")
+            return {}
     
     async def _gather_evidence(self, entities: List[str], intent: str, patient_data: Dict) -> Dict[str, Any]:
         """Gather relevant evidence from multiple sources"""

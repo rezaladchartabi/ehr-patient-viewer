@@ -47,8 +47,28 @@ class MedicalResponseGenerator:
                 'not_found': "No active clinical alerts were found for this patient at this time.",
                 'no_data': "I don't have access to clinical alert systems at the moment. Please check with your clinical team."
             },
+            'observation_query': {
+                'found': "The patient has the following observations and vital signs:\n{observations}\n\n{additional_info}",
+                'not_found': "No observations or vital signs are recorded for this patient. Would you like me to check for lab results or other measurements?",
+                'no_data': "I don't have access to the patient's observation records at the moment. Please ensure the patient data is loaded."
+            },
+            'encounter_query': {
+                'found': "The patient has the following encounters and visits:\n{encounters}\n\n{additional_info}",
+                'not_found': "No encounters or visits are recorded for this patient. Would you like me to check for appointments or hospitalizations?",
+                'no_data': "I don't have access to the patient's encounter records at the moment. Please ensure the patient data is loaded."
+            },
+            'procedure_query': {
+                'found': "The patient has undergone the following procedures:\n{procedures}\n\n{additional_info}",
+                'not_found': "No procedures are recorded for this patient. Would you like me to check for surgeries or tests?",
+                'no_data': "I don't have access to the patient's procedure records at the moment. Please ensure the patient data is loaded."
+            },
+            'specimen_query': {
+                'found': "The patient has the following specimens and lab samples:\n{specimens}\n\n{additional_info}",
+                'not_found': "No specimens or lab samples are recorded for this patient. Would you like me to check for lab work or collections?",
+                'no_data': "I don't have access to the patient's specimen records at the moment. Please ensure the patient data is loaded."
+            },
             'general_query': {
-                'default': "I can help you with information about the patient's medications, conditions, allergies, drug interactions, and clinical evidence. What specific information would you like to know?"
+                'default': "I can help you with information about the patient's medications, conditions, allergies, observations, encounters, procedures, specimens, drug interactions, and clinical evidence. What specific information would you like to know?"
             }
         }
         
@@ -111,10 +131,15 @@ class MedicalResponseGenerator:
         templates = self.response_templates.get(intent, self.response_templates['general_query'])
         
         if intent == 'medication_query':
-            medications = patient_data.get('medications', [])
-            if medications:
-                med_list = self._format_medication_list(medications)
-                additional_info = self._get_medication_additional_info(medications, evidence)
+            # Check all medication types
+            med_requests = patient_data.get('medication_requests', [])
+            med_admins = patient_data.get('medication_administrations', [])
+            med_dispenses = patient_data.get('medication_dispenses', [])
+            all_medications = med_requests + med_admins + med_dispenses
+            
+            if all_medications:
+                med_list = self._format_comprehensive_medication_list(med_requests, med_admins, med_dispenses)
+                additional_info = self._get_medication_additional_info(all_medications, evidence)
                 return templates['found'].format(medications=med_list, additional_info=additional_info)
             else:
                 return templates['not_found']
@@ -167,6 +192,42 @@ class MedicalResponseGenerator:
                 alert_list = self._format_alert_list(alerts)
                 recommendations = self._get_alert_recommendations(alerts)
                 return templates['found'].format(alerts=alert_list, recommendations=recommendations)
+            else:
+                return templates['not_found']
+        
+        elif intent == 'observation_query':
+            observations = patient_data.get('observations', [])
+            if observations:
+                observation_list = self._format_observation_list(observations)
+                additional_info = self._get_observation_additional_info(observations, evidence)
+                return templates['found'].format(observations=observation_list, additional_info=additional_info)
+            else:
+                return templates['not_found']
+        
+        elif intent == 'encounter_query':
+            encounters = patient_data.get('encounters', [])
+            if encounters:
+                encounter_list = self._format_encounter_list(encounters)
+                additional_info = self._get_encounter_additional_info(encounters, evidence)
+                return templates['found'].format(encounters=encounter_list, additional_info=additional_info)
+            else:
+                return templates['not_found']
+        
+        elif intent == 'procedure_query':
+            procedures = patient_data.get('procedures', [])
+            if procedures:
+                procedure_list = self._format_procedure_list(procedures)
+                additional_info = self._get_procedure_additional_info(procedures, evidence)
+                return templates['found'].format(procedures=procedure_list, additional_info=additional_info)
+            else:
+                return templates['not_found']
+        
+        elif intent == 'specimen_query':
+            specimens = patient_data.get('specimens', [])
+            if specimens:
+                specimen_list = self._format_specimen_list(specimens)
+                additional_info = self._get_specimen_additional_info(specimens, evidence)
+                return templates['found'].format(specimens=specimen_list, additional_info=additional_info)
             else:
                 return templates['not_found']
         
@@ -287,6 +348,202 @@ class MedicalResponseGenerator:
         
         return "\n".join(formatted)
     
+    def _format_comprehensive_medication_list(self, med_requests: List[Dict], med_admins: List[Dict], med_dispenses: List[Dict]) -> str:
+        """Format comprehensive medication list including all types"""
+        sections = []
+        
+        # Medication Requests
+        if med_requests:
+            request_text = "📋 **Medication Requests:**\n"
+            for med in med_requests:
+                name = med.get('medicationCodeableConcept', {}).get('text') or med.get('medicationCodeableConcept', {}).get('coding', [{}])[0].get('display', 'Unknown')
+                status = med.get('status', '')
+                intent = med.get('intent', '')
+                date = med.get('authoredOn', '')
+                
+                med_text = f"• {name}"
+                if status:
+                    med_text += f" ({status})"
+                if intent:
+                    med_text += f" - {intent}"
+                if date:
+                    try:
+                        date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                        formatted_date = date_obj.strftime('%m/%d/%Y')
+                        med_text += f" - {formatted_date}"
+                    except:
+                        med_text += f" - {date}"
+                
+                request_text += med_text + "\n"
+            sections.append(request_text)
+        
+        # Medication Administrations
+        if med_admins:
+            admin_text = "💊 **Medication Administrations:**\n"
+            for med in med_admins:
+                name = med.get('medicationCodeableConcept', {}).get('text') or med.get('medicationCodeableConcept', {}).get('coding', [{}])[0].get('display', 'Unknown')
+                status = med.get('status', '')
+                date = med.get('effectiveDateTime', '')
+                
+                med_text = f"• {name}"
+                if status:
+                    med_text += f" ({status})"
+                if date:
+                    try:
+                        date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                        formatted_date = date_obj.strftime('%m/%d/%Y')
+                        med_text += f" - {formatted_date}"
+                    except:
+                        med_text += f" - {date}"
+                
+                admin_text += med_text + "\n"
+            sections.append(admin_text)
+        
+        # Medication Dispenses
+        if med_dispenses:
+            dispense_text = "🏥 **Medication Dispenses:**\n"
+            for med in med_dispenses:
+                name = med.get('medicationCodeableConcept', {}).get('text') or med.get('medicationCodeableConcept', {}).get('coding', [{}])[0].get('display', 'Unknown')
+                status = med.get('status', '')
+                date = med.get('whenHandedOver', '')
+                
+                med_text = f"• {name}"
+                if status:
+                    med_text += f" ({status})"
+                if date:
+                    try:
+                        date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                        formatted_date = date_obj.strftime('%m/%d/%Y')
+                        med_text += f" - {formatted_date}"
+                    except:
+                        med_text += f" - {date}"
+                
+                dispense_text += med_text + "\n"
+            sections.append(dispense_text)
+        
+        if not sections:
+            return "No medications found"
+        
+        return "\n".join(sections)
+    
+    def _format_observation_list(self, observations: List[Dict]) -> str:
+        """Format observation list for display"""
+        if not observations:
+            return "No observations found"
+        
+        formatted = []
+        for obs in observations:
+            # Extract observation name from code
+            code = obs.get('code', {})
+            name = code.get('text') or (code.get('coding', [{}])[0].get('display') if code.get('coding') else 'Unknown observation')
+            value = obs.get('valueQuantity', {}).get('value') if obs.get('valueQuantity') else obs.get('valueString', 'No value')
+            unit = obs.get('valueQuantity', {}).get('unit', '') if obs.get('valueQuantity') else ''
+            date = obs.get('effectiveDateTime', '')
+            status = obs.get('status', '')
+            
+            obs_text = f"• {name}"
+            if value and value != 'No value':
+                obs_text += f": {value}"
+                if unit:
+                    obs_text += f" {unit}"
+            if status:
+                obs_text += f" ({status})"
+            if date:
+                try:
+                    date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                    formatted_date = date_obj.strftime('%m/%d/%Y')
+                    obs_text += f" - {formatted_date}"
+                except:
+                    obs_text += f" - {date}"
+            
+            formatted.append(obs_text)
+        
+        return "\n".join(formatted)
+    
+    def _format_encounter_list(self, encounters: List[Dict]) -> str:
+        """Format encounter list for display"""
+        if not encounters:
+            return "No encounters found"
+        
+        formatted = []
+        for enc in encounters:
+            # Extract encounter type
+            type_coding = enc.get('type', [{}])[0].get('coding', [{}])[0] if enc.get('type') else {}
+            name = type_coding.get('display') or 'Unknown encounter type'
+            status = enc.get('status', '')
+            date = enc.get('period', {}).get('start', '')
+            
+            enc_text = f"• {name}"
+            if status:
+                enc_text += f" ({status})"
+            if date:
+                try:
+                    date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                    formatted_date = date_obj.strftime('%m/%d/%Y')
+                    enc_text += f" - {formatted_date}"
+                except:
+                    enc_text += f" - {date}"
+            
+            formatted.append(enc_text)
+        
+        return "\n".join(formatted)
+    
+    def _format_procedure_list(self, procedures: List[Dict]) -> str:
+        """Format procedure list for display"""
+        if not procedures:
+            return "No procedures found"
+        
+        formatted = []
+        for proc in procedures:
+            # Extract procedure name from code
+            code = proc.get('code', {})
+            name = code.get('text') or (code.get('coding', [{}])[0].get('display') if code.get('coding') else 'Unknown procedure')
+            status = proc.get('status', '')
+            date = proc.get('performedDateTime', '')
+            
+            proc_text = f"• {name}"
+            if status:
+                proc_text += f" ({status})"
+            if date:
+                try:
+                    date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                    formatted_date = date_obj.strftime('%m/%d/%Y')
+                    proc_text += f" - {formatted_date}"
+                except:
+                    proc_text += f" - {date}"
+            
+            formatted.append(proc_text)
+        
+        return "\n".join(formatted)
+    
+    def _format_specimen_list(self, specimens: List[Dict]) -> str:
+        """Format specimen list for display"""
+        if not specimens:
+            return "No specimens found"
+        
+        formatted = []
+        for spec in specimens:
+            # Extract specimen type
+            type_coding = spec.get('type', {}).get('coding', [{}])[0] if spec.get('type') else {}
+            name = type_coding.get('display') or 'Unknown specimen type'
+            status = spec.get('status', '')
+            date = spec.get('collection', {}).get('collectedDateTime', '')
+            
+            spec_text = f"• {name}"
+            if status:
+                spec_text += f" ({status})"
+            if date:
+                try:
+                    date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                    formatted_date = date_obj.strftime('%m/%d/%Y')
+                    spec_text += f" - {formatted_date}"
+                except:
+                    spec_text += f" - {date}"
+            
+            formatted.append(spec_text)
+        
+        return "\n".join(formatted)
+    
     def _format_condition_list(self, conditions: List[Dict]) -> str:
         """Format condition list for display"""
         if not conditions:
@@ -366,6 +623,42 @@ class MedicalResponseGenerator:
         
         if evidence.get('interactions'):
             info.append("⚠️ Allergy contraindication analysis completed")
+        
+        return "\n".join(info) if info else ""
+    
+    def _get_observation_additional_info(self, observations: List[Dict], evidence: Dict[str, Any]) -> str:
+        """Get additional observation information"""
+        info = []
+        
+        if len(observations) > 10:
+            info.append(f"📊 Total observations: {len(observations)}")
+        
+        return "\n".join(info) if info else ""
+    
+    def _get_encounter_additional_info(self, encounters: List[Dict], evidence: Dict[str, Any]) -> str:
+        """Get additional encounter information"""
+        info = []
+        
+        if len(encounters) > 5:
+            info.append(f"🏥 Total encounters: {len(encounters)}")
+        
+        return "\n".join(info) if info else ""
+    
+    def _get_procedure_additional_info(self, procedures: List[Dict], evidence: Dict[str, Any]) -> str:
+        """Get additional procedure information"""
+        info = []
+        
+        if len(procedures) > 5:
+            info.append(f"🔬 Total procedures: {len(procedures)}")
+        
+        return "\n".join(info) if info else ""
+    
+    def _get_specimen_additional_info(self, specimens: List[Dict], evidence: Dict[str, Any]) -> str:
+        """Get additional specimen information"""
+        info = []
+        
+        if len(specimens) > 5:
+            info.append(f"🧪 Total specimens: {len(specimens)}")
         
         return "\n".join(info) if info else ""
     

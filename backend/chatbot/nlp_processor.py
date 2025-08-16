@@ -50,9 +50,30 @@ class MedicalNLPProcessor:
                 r'\b(dosage|dose|frequency|how.?much|how.?often)\b'
             ],
             'condition_query': [
-                r'\b(what|which|show|list|diagnosed|condition|disease)\b',
+                r'\b(what|which|show|list|diagnosed).*\b(condition|disease|diagnosis)\b',
                 r'\b(condition|diagnosis|disease).*\b(has|have|diagnosed)\b',
                 r'\b(medical.?history|past.?medical|pmh)\b'
+            ],
+            'observation_query': [
+                r'\b(what|which|show|list).*\b(observation|vital|sign|reading|measurement)\b',
+                r'\b(observation|vital|sign|reading|measurement).*\b(has|have)\b',
+                r'\b(blood.?pressure|heart.?rate|temperature|weight|height|bmi|lab|test)\b',
+                r'\b(vital|sign|reading|measurement|result|value)\b'
+            ],
+            'encounter_query': [
+                r'\b(what|which|show|list).*\b(encounter|visit|appointment|admission)\b',
+                r'\b(encounter|visit|appointment|admission|hospitalization).*\b(has|have)\b',
+                r'\b(when|date|time).*\b(visit|appointment|admission)\b'
+            ],
+            'procedure_query': [
+                r'\b(what|which|show|list).*\b(procedure|surgery|operation|test|scan)\b',
+                r'\b(procedure|surgery|operation|test|scan|examination)\b',
+                r'\b(blood.?test|x.?ray|mri|ct.?scan|ultrasound|biopsy)\b'
+            ],
+            'specimen_query': [
+                r'\b(what|which|show|list).*\b(specimen|sample|lab|test|collection)\b',
+                r'\b(specimen|sample|lab|test|collection|blood|urine|tissue).*\b(has|have)\b',
+                r'\b(lab.?work|laboratory|pathology)\b'
             ],
             'allergy_query': [
                 r'\b(allergy|allergic|reaction|intolerance)\b',
