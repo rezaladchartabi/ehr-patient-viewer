@@ -86,7 +86,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, patientName }) =
                 </svg>
               </button>
               
-              {showEvidence && (
+              {showEvidence && message.metadata?.evidence && (
                 <div className="mt-2 space-y-2">
                   {message.metadata.evidence.map((evidence, index) => (
                     <div key={index} className="bg-white rounded p-2 border border-gray-200">
@@ -116,7 +116,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, patientName }) =
           )}
 
           {/* Sources Section */}
-          {!isUser && hasSources && (
+          {!isUser && hasSources && message.metadata?.sources && (
             <div className="mt-2">
               <div className="text-xs text-gray-500">
                 Sources: {message.metadata.sources.join(', ')}
