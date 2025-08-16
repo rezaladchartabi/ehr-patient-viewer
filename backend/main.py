@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 import httpx
 import asyncio
 from typing import Dict, List, Optional, Any
@@ -251,6 +252,13 @@ async def fetch_from_fhir(path: str, params: Dict = None) -> Dict:
 
 # Initialize sync service after fetch_from_fhir is defined
 sync_service = SyncService(FHIR_BASE_URL, local_db, fetch_from_fhir)
+
+# Initialize chatbot service
+try:
+    from chatbot import ChatbotService
+    chatbot_service = ChatbotService()
+except ImportError:
+    chatbot_service = None
 
 def _cursor_allowed(cursor_url: str) -> bool:
     """Validate cursor URL for security"""
@@ -2386,3 +2394,136 @@ async def general_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": f"Internal server error: {str(exc)}"}
     )
+
+# Chatbot API Models
+class ChatbotMessageRequest(BaseModel):
+    message: str
+    patientId: str
+    conversationId: str
+    timestamp: str
+
+class ChatbotMessageResponse(BaseModel):
+    response: str
+    evidence: list = []
+    sources: list = []
+    confidence: float = 0.0
+    conversationId: str
+    timestamp: str
+
+# Chatbot Endpoints
+@app.post("/chatbot/message")
+async def chatbot_message(request: ChatbotMessageRequest):
+    """Process a chatbot message and return a response"""
+    try:
+        if not chatbot_service:
+            raise HTTPException(status_code=503, detail="Chatbot service not available")
+        
+        response = await chatbot_service.process_query(
+            message=request.message,
+            patient_id=request.patientId,
+            conversation_id=request.conversationId
+        )
+        
+        return ChatbotMessageResponse(**response)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Chatbot error: {e}")
+        raise HTTPException(status_code=500, detail=f"Chatbot processing error: {str(e)}")
+
+@app.get("/chatbot/suggestions")
+async def get_suggested_questions(patientId: str):
+    """Get suggested questions for a patient"""
+    try:
+        if not chatbot_service:
+            raise HTTPException(status_code=503, detail="Chatbot service not available")
+        
+        suggestions = await chatbot_service.get_suggested_questions(patientId)
+        return {"suggestions": suggestions}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting suggestions: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting suggestions: {str(e)}")
+
+@app.get("/chatbot/health")
+async def chatbot_health():
+    """Check chatbot service health"""
+    try:
+        if not chatbot_service:
+            return {
+                "status": "unavailable",
+                "message": "Chatbot service not initialized",
+                "timestamp": datetime.now().isoformat()
+            }
+        
+        health = await chatbot_service.health_check()
+        return health
+        
+    except Exception as e:
+        logger.error(f"Health check error: {e}")
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
+
+@app.get("/chatbot/evidence/search")
+async def search_evidence(q: str, filters: dict = None):
+    """Search for clinical evidence"""
+    try:
+        if not chatbot_service:
+            raise HTTPException(status_code=503, detail="Chatbot service not available")
+        
+        evidence = await chatbot_service.openevidence.search_evidence(q, filters)
+        return {"evidence": evidence}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Evidence search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Evidence search error: {str(e)}")
+
+@app.get("/chatbot/drugs/{drug_name}")
+async def get_drug_info(drug_name: str):
+    """Get drug information"""
+    try:
+        if not chatbot_service:
+            raise HTTPException(status_code=503, detail="Chatbot service not available")
+        
+        drug_info = await chatbot_service.rxnorm.search_drugs(drug_name)
+        return {"drug_info": drug_info}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Drug info error: {e}")
+        raise HTTPException(status_code=500, detail=f"Drug info error: {str(e)}")
+
+@app.get("/chatbot/alerts")
+async def get_clinical_alerts(patientId: str):
+    """Get clinical alerts for a patient"""
+    try:
+        if not chatbot_service:
+            raise HTTPException(status_code=503, detail="Chatbot service not available")
+        
+        # This would integrate with your clinical alert system
+        # For now, return mock alerts
+        alerts = [
+            {
+                "type": "medication_interaction",
+                "severity": "moderate",
+                "message": "Potential interaction between medications",
+                "timestamp": datetime.now().isoformat()
+            }
+        ]
+        
+        return {"alerts": alerts}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Alerts error: {e}")
+        raise HTTPException(status_code=500, detail=f"Alerts error: {str(e)}")

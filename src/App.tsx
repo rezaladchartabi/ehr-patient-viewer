@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
+import ChatInterface from './components/ChatInterface';
 
 // Types
 interface Patient {
@@ -53,6 +54,7 @@ function App() {
   const [allergiesLoading, setAllergiesLoading] = useState(false);
   const [pmh, setPmh] = useState<any[]>([]);
   const [pmhLoading, setPmhLoading] = useState(false);
+  const [showChatbot, setShowChatbot] = useState(false);
 
   // Load patients on mount
   useEffect(() => {
@@ -367,7 +369,7 @@ function App() {
   return (
     <div className="flex h-screen">
         {/* Patient List */}
-      <div className="w-1/3 border-r bg-white overflow-y-auto">
+      <div className={`${showChatbot ? 'w-1/4' : 'w-1/3'} border-r bg-white overflow-y-auto transition-all duration-300`}>
         <div className="p-4 border-b">
           <h2 className="font-bold text-lg">Patients ({patients.length})</h2>
                 </div>
@@ -390,7 +392,7 @@ function App() {
         </div>
 
         {/* Patient Details */}
-      <div className="flex-1 flex flex-col">
+      <div className={`${showChatbot ? 'w-1/2' : 'flex-1'} flex flex-col transition-all duration-300`}>
         {selectedPatient ? (
           <>
             {/* Patient Info Header */}
@@ -444,6 +446,25 @@ function App() {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              {/* Chatbot Toggle */}
+              <div className="mt-4">
+                <button
+                  onClick={() => setShowChatbot(!showChatbot)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    showChatbot 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                    <span>{showChatbot ? 'Hide' : 'Show'} AI Assistant</span>
+                  </div>
+                </button>
               </div>
             </div>
 
@@ -527,6 +548,17 @@ function App() {
             </div>
           )}
       </div>
+
+      {/* Chatbot Panel */}
+      {showChatbot && (
+        <div className="w-1/4 border-l border-gray-200 transition-all duration-300">
+          <ChatInterface
+            patientId={selectedPatient?.id}
+            patientName={selectedPatient?.family_name}
+            onClose={() => setShowChatbot(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
