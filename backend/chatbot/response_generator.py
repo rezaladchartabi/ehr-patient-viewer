@@ -120,10 +120,15 @@ class MedicalResponseGenerator:
                 return templates['not_found']
         
         elif intent == 'condition_query':
+            # Check both conditions and PMH data
             conditions = patient_data.get('conditions', [])
-            if conditions:
-                condition_list = self._format_condition_list(conditions)
-                additional_info = self._get_condition_additional_info(conditions, evidence)
+            pmh_conditions = patient_data.get('pmh', [])
+            
+            if conditions or pmh_conditions:
+                # Combine conditions and PMH
+                all_conditions = conditions + pmh_conditions
+                condition_list = self._format_condition_list(all_conditions)
+                additional_info = self._get_condition_additional_info(all_conditions, evidence)
                 return templates['found'].format(conditions=condition_list, additional_info=additional_info)
             else:
                 return templates['not_found']
@@ -289,15 +294,25 @@ class MedicalResponseGenerator:
         
         formatted = []
         for condition in conditions:
-            name = condition.get('name', 'Unknown condition')
+            # Handle both regular conditions and PMH data
+            name = condition.get('name') or condition.get('condition_name', 'Unknown condition')
             status = condition.get('status', '')
-            date = condition.get('date', '')
+            date = condition.get('date') or condition.get('chart_time', '')
+            category = condition.get('category', '')
             
             condition_text = f"• {name}"
             if status:
                 condition_text += f" ({status})"
+            if category and category != 'medical-history':
+                condition_text += f" [{category}]"
             if date:
-                condition_text += f" - {date}"
+                try:
+                    # Format the date nicely
+                    date_obj = datetime.fromisoformat(date.replace('Z', '+00:00'))
+                    formatted_date = date_obj.strftime('%m/%d/%Y')
+                    condition_text += f" - {formatted_date}"
+                except:
+                    condition_text += f" - {date}"
             
             formatted.append(condition_text)
         

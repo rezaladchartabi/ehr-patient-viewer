@@ -90,24 +90,94 @@ class ChatbotService:
             }
     
     async def _get_patient_data(self, patient_id: str) -> Dict[str, Any]:
-        """Get comprehensive patient data"""
+        """Get comprehensive patient data from database"""
         if patient_id in self.patient_cache:
             return self.patient_cache[patient_id]
         
-        # This would integrate with your existing patient data endpoints
-        # For now, return a mock structure
-        patient_data = {
-            "id": patient_id,
-            "conditions": [],
-            "medications": [],
-            "allergies": [],
-            "observations": [],
-            "encounters": []
-        }
-        
-        # Cache the data
-        self.patient_cache[patient_id] = patient_data
-        return patient_data
+        try:
+            # Initialize patient data structure
+            patient_data = {
+                "id": patient_id,
+                "conditions": [],
+                "medications": [],
+                "allergies": [],
+                "observations": [],
+                "encounters": [],
+                "pmh": []
+            }
+            
+            # Get PMH data from database
+            try:
+                pmh_response = await self._fetch_patient_pmh(patient_id)
+                if pmh_response and "pmh_conditions" in pmh_response:
+                    patient_data["pmh"] = pmh_response["pmh_conditions"]
+                    # Don't add to conditions to avoid duplicates
+            except Exception as e:
+                logger.warning(f"Failed to fetch PMH data for patient {patient_id}: {e}")
+            
+            # Get allergies from database
+            try:
+                allergies_response = await self._fetch_patient_allergies(patient_id)
+                if allergies_response and "allergies" in allergies_response:
+                    patient_data["allergies"] = allergies_response["allergies"]
+            except Exception as e:
+                logger.warning(f"Failed to fetch allergies for patient {patient_id}: {e}")
+            
+            # Cache the data
+            self.patient_cache[patient_id] = patient_data
+            logger.info(f"Fetched patient data for {patient_id}: {len(patient_data['pmh'])} PMH conditions, {len(patient_data['allergies'])} allergies")
+            return patient_data
+            
+        except Exception as e:
+            logger.error(f"Error fetching patient data for {patient_id}: {e}")
+            # Return empty structure on error
+            return {
+                "id": patient_id,
+                "conditions": [],
+                "medications": [],
+                "allergies": [],
+                "observations": [],
+                "encounters": [],
+                "pmh": []
+            }
+    
+    async def _fetch_patient_pmh(self, patient_id: str) -> Dict[str, Any]:
+        """Fetch PMH data for a patient from the database"""
+        try:
+            # Use the local database directly
+            from main import local_db
+            if local_db:
+                pmh_conditions = local_db.get_patient_pmh(patient_id)
+                return {
+                    "patient_id": patient_id,
+                    "pmh_conditions": pmh_conditions,
+                    "count": len(pmh_conditions)
+                }
+            else:
+                logger.error("Local database not available")
+                return {"pmh_conditions": []}
+        except Exception as e:
+            logger.error(f"Error fetching PMH data: {e}")
+            return {"pmh_conditions": []}
+    
+    async def _fetch_patient_allergies(self, patient_id: str) -> Dict[str, Any]:
+        """Fetch allergies for a patient from the database"""
+        try:
+            # Use the local database directly
+            from main import local_db
+            if local_db:
+                allergies = local_db.get_patient_allergies(patient_id)
+                return {
+                    "patient_id": patient_id,
+                    "allergies": allergies,
+                    "count": len(allergies)
+                }
+            else:
+                logger.error("Local database not available")
+                return {"allergies": []}
+        except Exception as e:
+            logger.error(f"Error fetching allergies data: {e}")
+            return {"allergies": []}
     
     async def _gather_evidence(self, entities: List[str], intent: str, patient_data: Dict) -> Dict[str, Any]:
         """Gather relevant evidence from multiple sources"""
