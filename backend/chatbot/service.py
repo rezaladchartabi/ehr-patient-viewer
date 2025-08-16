@@ -68,7 +68,7 @@ class ChatbotService:
                 "evidence": response.get("evidence", []),
                 "sources": response.get("sources", []),
                 "confidence": response.get("confidence", 0.8),
-                "conversation_id": conversation_id,
+                "conversationId": conversation_id,
                 "timestamp": datetime.now().isoformat(),
                 "metadata": {
                     "intent": intent,
@@ -84,7 +84,7 @@ class ChatbotService:
                 "evidence": [],
                 "sources": [],
                 "confidence": 0.0,
-                "conversation_id": conversation_id,
+                "conversationId": conversation_id,
                 "timestamp": datetime.now().isoformat(),
                 "error": str(e)
             }

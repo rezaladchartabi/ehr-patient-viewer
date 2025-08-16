@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import MessageBubble from './MessageBubble';
 import ChatInput from './ChatInput';
 import ConversationThread from './ConversationThread';
+import { chatbotApi } from '../services/chatbotApi';
 
 export interface Message {
   id: string;
@@ -74,25 +75,13 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     setIsLoading(true);
 
     try {
-      // Send message to backend
-      const response = await fetch('/api/chatbot/message', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: text.trim(),
-          patientId,
-          conversationId,
-          timestamp: new Date().toISOString()
-        })
+      // Send message to backend using the chatbot API service
+      const data = await chatbotApi.sendMessage({
+        message: text.trim(),
+        patientId,
+        conversationId,
+        timestamp: new Date().toISOString()
       });
-
-      if (!response.ok) {
-        throw new Error('Failed to send message');
-      }
-
-      const data = await response.json();
       
       // Update user message status
       setMessages(prev => prev.map(msg => 
