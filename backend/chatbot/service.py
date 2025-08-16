@@ -6,11 +6,13 @@ Main service that coordinates NLP processing, data retrieval, and response gener
 
 import asyncio
 import logging
+import os
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 import json
 
 from .nlp_processor import MedicalNLPProcessor
+from .llm_nlp_processor import LLMMedicalNLPProcessor
 from .response_generator import MedicalResponseGenerator
 from data_sources import OpenEvidenceSource, RxNormSource, KnowledgeBase
 
@@ -19,8 +21,24 @@ logger = logging.getLogger(__name__)
 class ChatbotService:
     """Main chatbot service for medical queries"""
     
-    def __init__(self):
-        self.nlp_processor = MedicalNLPProcessor()
+    def __init__(self, use_llm: bool = True):
+        # Initialize NLP processor (LLM or rule-based)
+        if use_llm:
+            api_key = os.getenv('OPENAI_API_KEY')
+            if api_key:
+                try:
+                    self.nlp_processor = LLMMedicalNLPProcessor(api_key=api_key)
+                    logger.info("Initialized LLM-based NLP processor with GPT-4")
+                except Exception as e:
+                    logger.warning(f"Failed to initialize LLM processor: {e}, falling back to rule-based")
+                    self.nlp_processor = MedicalNLPProcessor()
+            else:
+                logger.warning("OPENAI_API_KEY not found, using rule-based NLP processor")
+                self.nlp_processor = MedicalNLPProcessor()
+        else:
+            self.nlp_processor = MedicalNLPProcessor()
+            logger.info("Using rule-based NLP processor")
+        
         self.response_generator = MedicalResponseGenerator()
         self.knowledge_base = KnowledgeBase()
         

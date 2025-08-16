@@ -33,6 +33,9 @@ cryptography==43.0.3
 # Date and time handling
 python-dateutil==2.8.2
 
+# AI and LLM
+openai==1.3.7
+
 # Environment-specific packages
 # Uncomment for production deployment
 # gunicorn==21.2.0

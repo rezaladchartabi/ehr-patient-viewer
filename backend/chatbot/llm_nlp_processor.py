@@ -1,0 +1,295 @@
+"""
+LLM-based Medical NLP Processor
+
+Natural language processing for medical queries using GPT-4 for intent classification
+and entity extraction.
+"""
+
+import re
+import logging
+import json
+from typing import List, Dict, Any, Optional
+from datetime import datetime
+import openai
+
+logger = logging.getLogger(__name__)
+
+class LLMMedicalNLPProcessor:
+    """LLM-based NLP processor for medical queries using GPT-4"""
+    
+    def __init__(self, api_key: str, model: str = "gpt-4"):
+        self.client = openai.OpenAI(api_key=api_key)
+        self.model = model
+        
+        # Intent categories for medical queries
+        self.intent_categories = [
+            'medication_query',
+            'condition_query', 
+            'observation_query',
+            'encounter_query',
+            'procedure_query',
+            'specimen_query',
+            'allergy_query',
+            'interaction_query',
+            'evidence_query',
+            'alert_query',
+            'general_query'
+        ]
+        
+        # Medical entity types
+        self.entity_types = [
+            'medication',
+            'condition',
+            'allergy',
+            'procedure',
+            'vital_sign',
+            'lab_test',
+            'symptom',
+            'body_part',
+            'medical_device'
+        ]
+    
+    async def extract_entities(self, text: str) -> List[str]:
+        """Extract medical entities from text using GPT-4"""
+        try:
+            prompt = f"""
+You are a medical entity extraction system. Extract medical entities from the following text.
+Return ONLY a JSON array of entity names, nothing else.
+
+Text: "{text}"
+
+Return format: ["entity1", "entity2", "entity3"]
+"""
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a medical entity extraction system. Return only JSON arrays of entity names."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=200
+            )
+            
+            content = response.choices[0].message.content.strip()
+            
+            # Try to parse JSON response
+            try:
+                entities = json.loads(content)
+                if isinstance(entities, list):
+                    # Clean up entities
+                    entities = [entity.strip() for entity in entities if entity.strip() and len(entity.strip()) > 2]
+                    logger.info(f"Extracted entities: {entities}")
+                    return entities
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse JSON response: {content}")
+            
+            # Fallback to regex extraction if JSON parsing fails
+            return await self._fallback_entity_extraction(text)
+            
+        except Exception as e:
+            logger.error(f"Error extracting entities with GPT-4: {e}")
+            return await self._fallback_entity_extraction(text)
+    
+    async def classify_intent(self, text: str) -> str:
+        """Classify the intent of the query using GPT-4"""
+        try:
+            prompt = f"""
+You are a medical intent classification system. Classify the intent of the following medical query.
+
+Available intents:
+- medication_query: Questions about medications, drugs, prescriptions
+- condition_query: Questions about medical conditions, diagnoses, diseases, PMH
+- observation_query: Questions about vital signs, lab results, measurements, observations
+- encounter_query: Questions about hospital visits, appointments, encounters
+- procedure_query: Questions about medical procedures, surgeries, tests
+- specimen_query: Questions about lab samples, specimens, collections
+- allergy_query: Questions about allergies, allergic reactions
+- interaction_query: Questions about drug interactions, contraindications
+- evidence_query: Questions about clinical evidence, studies, guidelines
+- alert_query: Questions about clinical alerts, warnings, risks
+- general_query: General medical questions or unclear intent
+
+Query: "{text}"
+
+Return ONLY the intent name, nothing else.
+"""
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a medical intent classification system. Return only the intent name."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=50
+            )
+            
+            intent = response.choices[0].message.content.strip().lower()
+            
+            # Validate intent
+            if intent in self.intent_categories:
+                logger.info(f"Classified intent: {intent}")
+                return intent
+            else:
+                logger.warning(f"Invalid intent returned: {intent}, using general_query")
+                return "general_query"
+                
+        except Exception as e:
+            logger.error(f"Error classifying intent with GPT-4: {e}")
+            return await self._fallback_intent_classification(text)
+    
+    async def extract_patient_context(self, text: str) -> Dict[str, Any]:
+        """Extract patient-specific context from query using GPT-4"""
+        try:
+            prompt = f"""
+You are a medical context extraction system. Extract context from the following medical query.
+
+Query: "{text}"
+
+Return a JSON object with the following fields:
+- time_reference: "current", "recent", "past", "future", or null
+- severity: "mild", "moderate", "severe", or null  
+- urgency: "urgent", "routine", or null
+- comparison: "trend", "baseline", "normal", or null
+
+Return format: {{"time_reference": "...", "severity": "...", "urgency": "...", "comparison": "..."}}
+"""
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a medical context extraction system. Return only JSON objects."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=200
+            )
+            
+            content = response.choices[0].message.content.strip()
+            
+            try:
+                context = json.loads(content)
+                return context
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse context JSON: {content}")
+                return self._get_default_context()
+                
+        except Exception as e:
+            logger.error(f"Error extracting context with GPT-4: {e}")
+            return self._get_default_context()
+    
+    async def _fallback_entity_extraction(self, text: str) -> List[str]:
+        """Fallback entity extraction using regex patterns"""
+        entities = []
+        text_lower = text.lower()
+        
+        # Basic medical term patterns
+        medical_patterns = [
+            r'\b(medication|med|drug|prescription|pill|tablet|capsule|injection)\b',
+            r'\b(condition|diagnosis|disease|illness|symptom)\b',
+            r'\b(allergy|allergic|reaction|intolerance)\b',
+            r'\b(procedure|surgery|operation|test|scan)\b',
+            r'\b(blood.?pressure|heart.?rate|temperature|weight|height|bmi)\b',
+            r'\b(observation|vital|sign|reading|measurement)\b',
+            r'\b(encounter|visit|appointment|admission)\b',
+            r'\b(specimen|sample|lab|collection)\b'
+        ]
+        
+        for pattern in medical_patterns:
+            matches = re.findall(pattern, text_lower)
+            entities.extend(matches)
+        
+        # Remove duplicates and clean up
+        entities = list(set(entities))
+        entities = [entity.strip() for entity in entities if len(entity.strip()) > 2]
+        
+        logger.info(f"Fallback extracted entities: {entities}")
+        return entities
+    
+    async def _fallback_intent_classification(self, text: str) -> str:
+        """Fallback intent classification using regex patterns"""
+        text_lower = text.lower()
+        
+        # Simple pattern matching as fallback
+        if any(word in text_lower for word in ['medication', 'med', 'drug', 'prescription']):
+            return 'medication_query'
+        elif any(word in text_lower for word in ['condition', 'diagnosis', 'disease', 'pmh']):
+            return 'condition_query'
+        elif any(word in text_lower for word in ['observation', 'vital', 'sign', 'lab']):
+            return 'observation_query'
+        elif any(word in text_lower for word in ['encounter', 'visit', 'appointment']):
+            return 'encounter_query'
+        elif any(word in text_lower for word in ['procedure', 'surgery', 'operation']):
+            return 'procedure_query'
+        elif any(word in text_lower for word in ['specimen', 'sample', 'collection']):
+            return 'specimen_query'
+        elif any(word in text_lower for word in ['allergy', 'allergic', 'reaction']):
+            return 'allergy_query'
+        elif any(word in text_lower for word in ['interaction', 'interact', 'conflict']):
+            return 'interaction_query'
+        elif any(word in text_lower for word in ['evidence', 'study', 'trial']):
+            return 'evidence_query'
+        elif any(word in text_lower for word in ['alert', 'warning', 'risk']):
+            return 'alert_query'
+        else:
+            return 'general_query'
+    
+    def _get_default_context(self) -> Dict[str, Any]:
+        """Get default context structure"""
+        return {
+            "time_reference": None,
+            "severity": None,
+            "urgency": None,
+            "comparison": None
+        }
+    
+    async def analyze_query_complexity(self, text: str) -> Dict[str, Any]:
+        """Analyze the complexity of a medical query using GPT-4"""
+        try:
+            prompt = f"""
+Analyze the complexity of this medical query:
+
+"{text}"
+
+Return a JSON object with:
+- complexity_level: "simple", "moderate", or "complex"
+- requires_context: true/false
+- multi_intent: true/false
+- medical_terminology_density: "low", "medium", or "high"
+
+Return format: {{"complexity_level": "...", "requires_context": true/false, "multi_intent": true/false, "medical_terminology_density": "..."}}
+"""
+
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a medical query complexity analyzer. Return only JSON objects."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=200
+            )
+            
+            content = response.choices[0].message.content.strip()
+            
+            try:
+                analysis = json.loads(content)
+                return analysis
+            except json.JSONDecodeError:
+                logger.warning(f"Failed to parse complexity analysis JSON: {content}")
+                return {
+                    "complexity_level": "moderate",
+                    "requires_context": False,
+                    "multi_intent": False,
+                    "medical_terminology_density": "medium"
+                }
+                
+        except Exception as e:
+            logger.error(f"Error analyzing query complexity: {e}")
+            return {
+                "complexity_level": "moderate",
+                "requires_context": False,
+                "multi_intent": False,
+                "medical_terminology_density": "medium"
+            }

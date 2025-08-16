@@ -257,7 +257,9 @@ sync_service = SyncService(FHIR_BASE_URL, local_db, fetch_from_fhir)
 # Initialize chatbot service
 try:
     from chatbot import ChatbotService
-    chatbot_service = ChatbotService()
+    # Use LLM by default, but can be disabled with environment variable
+    use_llm = os.getenv("USE_LLM_NLP", "true").lower() == "true"
+    chatbot_service = ChatbotService(use_llm=use_llm)
 except ImportError:
     chatbot_service = None
 
