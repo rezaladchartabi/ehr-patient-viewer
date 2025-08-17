@@ -13,6 +13,7 @@ import json
 
 from .nlp_processor import MedicalNLPProcessor
 from .llm_nlp_processor import LLMMedicalNLPProcessor
+from .ollama_nlp_processor import OllamaMedicalNLPProcessor
 from .response_generator import MedicalResponseGenerator
 from data_sources import OpenEvidenceSource, RxNormSource, KnowledgeBase
 
@@ -21,23 +22,67 @@ logger = logging.getLogger(__name__)
 class ChatbotService:
     """Main chatbot service for medical queries"""
     
-    def __init__(self, use_llm: bool = True):
-        # Initialize NLP processor (LLM or rule-based)
-        if use_llm:
+    def __init__(self, nlp_type: str = "auto"):
+        """
+        Initialize chatbot service with specified NLP processor
+        
+        Args:
+            nlp_type: "auto", "gpt4", "ollama", or "rule-based"
+        """
+        # Initialize NLP processor based on type
+        if nlp_type == "gpt4":
+            # Try GPT-4 first
             api_key = os.getenv('OPENAI_API_KEY')
             if api_key:
                 try:
                     self.nlp_processor = LLMMedicalNLPProcessor(api_key=api_key)
                     logger.info("Initialized LLM-based NLP processor with GPT-4")
                 except Exception as e:
-                    logger.warning(f"Failed to initialize LLM processor: {e}, falling back to rule-based")
+                    logger.warning(f"Failed to initialize GPT-4 processor: {e}, falling back to rule-based")
                     self.nlp_processor = MedicalNLPProcessor()
             else:
                 logger.warning("OPENAI_API_KEY not found, using rule-based NLP processor")
                 self.nlp_processor = MedicalNLPProcessor()
-        else:
+        
+        elif nlp_type == "ollama":
+            # Try Ollama
+            try:
+                # Use GPT-OSS 20B model for better medical NLP
+                self.nlp_processor = OllamaMedicalNLPProcessor(model="gpt-oss:20b")
+                logger.info("Initialized Ollama-based NLP processor with GPT-OSS 20B")
+            except Exception as e:
+                logger.warning(f"Failed to initialize Ollama processor: {e}, falling back to rule-based")
+                self.nlp_processor = MedicalNLPProcessor()
+        
+        elif nlp_type == "rule-based":
+            # Use rule-based only
             self.nlp_processor = MedicalNLPProcessor()
             logger.info("Using rule-based NLP processor")
+        
+        else:  # "auto" - try GPT-4, then Ollama, then rule-based
+            # Try GPT-4 first
+            api_key = os.getenv('OPENAI_API_KEY')
+            if api_key:
+                try:
+                    self.nlp_processor = LLMMedicalNLPProcessor(api_key=api_key)
+                    logger.info("Auto-selected: LLM-based NLP processor with GPT-4")
+                except Exception as e:
+                    logger.warning(f"GPT-4 failed: {e}, trying Ollama...")
+                    # Try Ollama
+                    try:
+                        self.nlp_processor = OllamaMedicalNLPProcessor()
+                        logger.info("Auto-selected: Ollama-based NLP processor")
+                    except Exception as e2:
+                        logger.warning(f"Ollama failed: {e2}, using rule-based")
+                        self.nlp_processor = MedicalNLPProcessor()
+            else:
+                                    # Try Ollama
+                    try:
+                        self.nlp_processor = OllamaMedicalNLPProcessor(model="gpt-oss:20b")
+                        logger.info("Auto-selected: Ollama-based NLP processor with GPT-OSS 20B")
+                    except Exception as e:
+                        logger.warning(f"Ollama failed: {e}, using rule-based")
+                        self.nlp_processor = MedicalNLPProcessor()
         
         self.response_generator = MedicalResponseGenerator()
         self.knowledge_base = KnowledgeBase()
@@ -157,13 +202,14 @@ class ChatbotService:
             # Get FHIR resources
             fhir_patient_ref = f"Patient/{patient_id}"
             
-            # Get conditions from FHIR
+            # Always get conditions from FHIR (prioritize PMH if available, but always have FHIR as backup)
             try:
                 conditions_response = await self._fetch_fhir_conditions(fhir_patient_ref)
                 if conditions_response and "entry" in conditions_response:
                     patient_data["conditions"] = [entry["resource"] for entry in conditions_response["entry"]]
             except Exception as e:
                 logger.warning(f"Failed to fetch conditions for patient {patient_id}: {e}")
+                patient_data["conditions"] = []
             
             # Get medication requests from FHIR
             try:
@@ -269,18 +315,18 @@ class ChatbotService:
     async def _fetch_patient_pmh(self, patient_id: str) -> Dict[str, Any]:
         """Fetch PMH data for a patient from the database"""
         try:
-            # Use the local database directly
-            from main import local_db
-            if local_db:
-                pmh_conditions = local_db.get_patient_pmh(patient_id)
+            # Use the same backend as the UI for consistency
+            import httpx
+            async with httpx.AsyncClient() as client:
+                url = f"https://ehr-backend-87r9.onrender.com/local/patients/{patient_id}/pmh"
+                response = await client.get(url)
+                response.raise_for_status()
+                data = response.json()
                 return {
                     "patient_id": patient_id,
-                    "pmh_conditions": pmh_conditions,
-                    "count": len(pmh_conditions)
+                    "pmh_conditions": data.get("pmh_conditions", []),
+                    "count": len(data.get("pmh_conditions", []))
                 }
-            else:
-                logger.error("Local database not available")
-                return {"pmh_conditions": []}
         except Exception as e:
             logger.error(f"Error fetching PMH data: {e}")
             return {"pmh_conditions": []}
@@ -288,18 +334,18 @@ class ChatbotService:
     async def _fetch_patient_allergies(self, patient_id: str) -> Dict[str, Any]:
         """Fetch allergies for a patient from the database"""
         try:
-            # Use the local database directly
-            from main import local_db
-            if local_db:
-                allergies = local_db.get_patient_allergies(patient_id)
+            # Use the same backend as the UI for consistency
+            import httpx
+            async with httpx.AsyncClient() as client:
+                url = f"https://ehr-backend-87r9.onrender.com/local/patients/{patient_id}/allergies"
+                response = await client.get(url)
+                response.raise_for_status()
+                data = response.json()
                 return {
                     "patient_id": patient_id,
-                    "allergies": allergies,
-                    "count": len(allergies)
+                    "allergies": data.get("allergies", []),
+                    "count": len(data.get("allergies", []))
                 }
-            else:
-                logger.error("Local database not available")
-                return {"allergies": []}
         except Exception as e:
             logger.error(f"Error fetching allergies data: {e}")
             return {"allergies": []}
@@ -321,9 +367,15 @@ class ChatbotService:
     async def _fetch_fhir_conditions(self, patient_ref: str) -> Dict[str, Any]:
         """Fetch conditions from FHIR server"""
         try:
-            from main import fetch_from_fhir
-            params = {"patient": patient_ref, "_count": 100}
-            return await fetch_from_fhir("/Condition", params)
+            # Use the same backend as the UI for consistency
+            import httpx
+            async with httpx.AsyncClient() as client:
+                # Extract patient ID from patient_ref (format: "Patient/{id}")
+                patient_id = patient_ref.split('/')[-1]
+                url = f"https://ehr-backend-87r9.onrender.com/Condition?patient=Patient/{patient_id}&_count=100"
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.error(f"Error fetching FHIR conditions: {e}")
             return {}
@@ -331,9 +383,14 @@ class ChatbotService:
     async def _fetch_fhir_medication_requests(self, patient_ref: str) -> Dict[str, Any]:
         """Fetch medication requests from FHIR server"""
         try:
-            from main import fetch_from_fhir
-            params = {"patient": patient_ref, "_count": 100}
-            return await fetch_from_fhir("/MedicationRequest", params)
+            # Use the same backend as the UI for consistency
+            import httpx
+            async with httpx.AsyncClient() as client:
+                patient_id = patient_ref.split('/')[-1]
+                url = f"https://ehr-backend-87r9.onrender.com/MedicationRequest?patient=Patient/{patient_id}&_count=100"
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.error(f"Error fetching FHIR medication requests: {e}")
             return {}
@@ -341,9 +398,14 @@ class ChatbotService:
     async def _fetch_fhir_medication_administrations(self, patient_ref: str) -> Dict[str, Any]:
         """Fetch medication administrations from FHIR server"""
         try:
-            from main import fetch_from_fhir
-            params = {"patient": patient_ref, "_count": 100}
-            return await fetch_from_fhir("/MedicationAdministration", params)
+            # Use the same backend as the UI for consistency
+            import httpx
+            async with httpx.AsyncClient() as client:
+                patient_id = patient_ref.split('/')[-1]
+                url = f"https://ehr-backend-87r9.onrender.com/MedicationAdministration?patient=Patient/{patient_id}&_count=100"
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.error(f"Error fetching FHIR medication administrations: {e}")
             return {}
@@ -351,9 +413,14 @@ class ChatbotService:
     async def _fetch_fhir_medication_dispenses(self, patient_ref: str) -> Dict[str, Any]:
         """Fetch medication dispenses from FHIR server"""
         try:
-            from main import fetch_from_fhir
-            params = {"patient": patient_ref, "_count": 100}
-            return await fetch_from_fhir("/MedicationDispense", params)
+            # Use the same backend as the UI for consistency
+            import httpx
+            async with httpx.AsyncClient() as client:
+                patient_id = patient_ref.split('/')[-1]
+                url = f"https://ehr-backend-87r9.onrender.com/MedicationDispense?patient=Patient/{patient_id}&_count=100"
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.error(f"Error fetching FHIR medication dispenses: {e}")
             return {}
@@ -361,9 +428,14 @@ class ChatbotService:
     async def _fetch_fhir_observations(self, patient_ref: str) -> Dict[str, Any]:
         """Fetch observations from FHIR server"""
         try:
-            from main import fetch_from_fhir
-            params = {"patient": patient_ref, "_count": 100}
-            return await fetch_from_fhir("/Observation", params)
+            # Use the same backend as the UI for consistency
+            import httpx
+            async with httpx.AsyncClient() as client:
+                patient_id = patient_ref.split('/')[-1]
+                url = f"https://ehr-backend-87r9.onrender.com/Observation?patient=Patient/{patient_id}&_count=100"
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.error(f"Error fetching FHIR observations: {e}")
             return {}
@@ -371,9 +443,14 @@ class ChatbotService:
     async def _fetch_fhir_encounters(self, patient_ref: str) -> Dict[str, Any]:
         """Fetch encounters from FHIR server"""
         try:
-            from main import fetch_from_fhir
-            params = {"patient": patient_ref, "_count": 100}
-            return await fetch_from_fhir("/Encounter", params)
+            # Use the same backend as the UI for consistency
+            import httpx
+            async with httpx.AsyncClient() as client:
+                patient_id = patient_ref.split('/')[-1]
+                url = f"https://ehr-backend-87r9.onrender.com/Encounter?patient=Patient/{patient_id}&_count=100"
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.error(f"Error fetching FHIR encounters: {e}")
             return {}
@@ -381,9 +458,14 @@ class ChatbotService:
     async def _fetch_fhir_procedures(self, patient_ref: str) -> Dict[str, Any]:
         """Fetch procedures from FHIR server"""
         try:
-            from main import fetch_from_fhir
-            params = {"patient": patient_ref, "_count": 100}
-            return await fetch_from_fhir("/Procedure", params)
+            # Use the same backend as the UI for consistency
+            import httpx
+            async with httpx.AsyncClient() as client:
+                patient_id = patient_ref.split('/')[-1]
+                url = f"https://ehr-backend-87r9.onrender.com/Procedure?patient=Patient/{patient_id}&_count=100"
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.error(f"Error fetching FHIR procedures: {e}")
             return {}
@@ -391,9 +473,14 @@ class ChatbotService:
     async def _fetch_fhir_specimens(self, patient_ref: str) -> Dict[str, Any]:
         """Fetch specimens from FHIR server"""
         try:
-            from main import fetch_from_fhir
-            params = {"patient": patient_ref, "_count": 100}
-            return await fetch_from_fhir("/Specimen", params)
+            # Use the same backend as the UI for consistency
+            import httpx
+            async with httpx.AsyncClient() as client:
+                patient_id = patient_ref.split('/')[-1]
+                url = f"https://ehr-backend-87r9.onrender.com/Specimen?patient=Patient/{patient_id}&_count=100"
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.json()
         except Exception as e:
             logger.error(f"Error fetching FHIR specimens: {e}")
             return {}

@@ -51,8 +51,12 @@ class MedicalNLPProcessor:
             ],
             'condition_query': [
                 r'\b(what|which|show|list|diagnosed).*\b(condition|disease|diagnosis)\b',
-                r'\b(condition|diagnosis|disease).*\b(has|have|diagnosed)\b',
-                r'\b(medical.?history|past.?medical|pmh)\b'
+                r'\b(condition|diagnosis|disease).*\b(has|have|diagnosed)\b'
+            ],
+            'pmh_query': [
+                r'\b(medical.?history|past.?medical|pmh)\b',
+                r'\b(what|which|show|list).*\b(medical.?history|past.?medical|pmh)\b',
+                r'\b(history|background).*\b(medical|condition)\b'
             ],
             'observation_query': [
                 r'\b(what|which|show|list).*\b(observation|vital|sign|reading|measurement)\b',

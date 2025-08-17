@@ -1,0 +1,65 @@
+{
+  "intent": "pmh_query",
+  "description": "Questions about patient's past medical history",
+  "version": "1.0",
+  "created": "2025-01-16",
+  "last_updated": "2025-01-16",
+  "optimization_notes": "Recently fixed to separate from condition_query",
+  
+  "prompt_template": {
+    "system_prompt": "You are a medical intent classification system. Return ONLY the intent name, nothing else.",
+    "user_prompt": "Classify the intent of this medical query:\n\nAvailable intents:\n- pmh_query: Questions about past medical history, PMH, medical history\n- condition_query: Questions about medical conditions, diagnoses, diseases\n- medication_query: Questions about medications, drugs, prescriptions\n- allergy_query: Questions about allergies, allergic reactions\n- observation_query: Questions about vital signs, lab results, measurements\n- encounter_query: Questions about hospital visits, appointments, encounters\n- procedure_query: Questions about medical procedures, surgeries, tests\n- specimen_query: Questions about lab samples, specimens, collections\n- interaction_query: Questions about drug interactions, contraindications\n- evidence_query: Questions about clinical evidence, studies, guidelines\n- alert_query: Questions about clinical alerts, warnings, risks\n- general_query: General medical questions or unclear intent\n\nQuery: \"{query}\"\n\nReturn ONLY the intent name."
+  },
+  
+  "keywords": [
+    "past medical history",
+    "pmh",
+    "medical history",
+    "history of",
+    "previous conditions",
+    "prior diagnoses",
+    "background",
+    "past conditions"
+  ],
+  
+  "example_queries": [
+    "What is the patient's past medical history?",
+    "Show me the patient's PMH",
+    "What medical history does this patient have?",
+    "Tell me about the patient's previous conditions",
+    "What is the patient's background?",
+    "Show past medical history",
+    "Patient's medical history"
+  ],
+  
+  "negative_examples": [
+    "What conditions does the patient have now?",
+    "Current patient conditions",
+    "Active diagnoses",
+    "What medications is the patient taking?"
+  ],
+  
+  "performance_metrics": {
+    "accuracy": 0.0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1_score": 0.0,
+    "test_count": 0,
+    "last_tested": null
+  },
+  
+  "optimization_history": [
+    {
+      "date": "2025-01-16",
+      "change": "Separated PMH from condition_query intent",
+      "reason": "PMH queries were being misclassified as condition_query",
+      "result": "Improved accuracy for PMH queries"
+    }
+  ],
+  
+  "data_source": {
+    "primary": "local_database",
+    "endpoint": "/local/patients/{id}/pmh",
+    "description": "PMH data extracted from Excel files and stored in local database"
+  }
+}

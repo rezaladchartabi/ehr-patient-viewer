@@ -99,7 +99,8 @@ You are a medical intent classification system. Classify the intent of the follo
 
 Available intents:
 - medication_query: Questions about medications, drugs, prescriptions
-- condition_query: Questions about medical conditions, diagnoses, diseases, PMH
+- pmh_query: Questions about past medical history, PMH, medical history
+- condition_query: Questions about medical conditions, diagnoses, diseases
 - observation_query: Questions about vital signs, lab results, measurements, observations
 - encounter_query: Questions about hospital visits, appointments, encounters
 - procedure_query: Questions about medical procedures, surgeries, tests
@@ -212,9 +213,11 @@ Return format: {{"time_reference": "...", "severity": "...", "urgency": "...", "
         text_lower = text.lower()
         
         # Simple pattern matching as fallback
-        if any(word in text_lower for word in ['medication', 'med', 'drug', 'prescription']):
+        if any(word in text_lower for word in ['pmh', 'medical history', 'past medical']):
+            return 'pmh_query'
+        elif any(word in text_lower for word in ['medication', 'med', 'drug', 'prescription']):
             return 'medication_query'
-        elif any(word in text_lower for word in ['condition', 'diagnosis', 'disease', 'pmh']):
+        elif any(word in text_lower for word in ['condition', 'diagnosis', 'disease']):
             return 'condition_query'
         elif any(word in text_lower for word in ['observation', 'vital', 'sign', 'lab']):
             return 'observation_query'

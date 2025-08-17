@@ -32,6 +32,11 @@ class MedicalResponseGenerator:
                 'not_found': "No known allergies are recorded for this patient. Would you like me to check for any adverse reactions or help you add allergy information?",
                 'no_data': "I don't have access to the patient's allergy records at the moment. Please ensure the patient data is loaded."
             },
+            'pmh_query': {
+                'found': "The patient has the following past medical history:\n{conditions}\n\n{additional_info}",
+                'not_found': "No past medical history is recorded for this patient. Would you like me to check for current conditions?",
+                'no_data': "I don't have access to the patient's past medical history at the moment. Please ensure the patient data is loaded."
+            },
             'interaction_query': {
                 'found': "I found the following potential drug interactions:\n{interactions}\n\n{recommendations}",
                 'not_found': "No significant drug interactions were found with the current medications. However, it's always good practice to monitor for any adverse effects.",
@@ -145,16 +150,26 @@ class MedicalResponseGenerator:
                 return templates['not_found']
         
         elif intent == 'condition_query':
-            # Check both conditions and PMH data
-            conditions = patient_data.get('conditions', [])
-            pmh_conditions = patient_data.get('pmh', [])
+            # Use FHIR conditions (which should always be available)
+            fhir_conditions = patient_data.get('conditions', [])
             
-            if conditions or pmh_conditions:
-                # Combine conditions and PMH
-                all_conditions = conditions + pmh_conditions
-                condition_list = self._format_condition_list(all_conditions)
-                additional_info = self._get_condition_additional_info(all_conditions, evidence)
+            if fhir_conditions:
+                condition_list = self._format_condition_list(fhir_conditions)
+                additional_info = self._get_condition_additional_info(fhir_conditions, evidence)
                 return templates['found'].format(conditions=condition_list, additional_info=additional_info)
+            else:
+                return templates['not_found']
+        
+        elif intent == 'pmh_query':
+            # Use PMH data from local database
+            pmh_conditions = patient_data.get('pmh', [])
+            print(f"DEBUG: PMH query - found {len(pmh_conditions)} PMH conditions")
+            print(f"DEBUG: PMH data keys: {list(patient_data.keys())}")
+            print(f"DEBUG: PMH conditions sample: {pmh_conditions[:2] if pmh_conditions else 'None'}")
+            if pmh_conditions:
+                pmh_list = self._format_pmh_list(pmh_conditions)
+                additional_info = self._get_pmh_additional_info(pmh_conditions, evidence)
+                return templates['found'].format(conditions=pmh_list, additional_info=additional_info)
             else:
                 return templates['not_found']
         
@@ -354,17 +369,25 @@ class MedicalResponseGenerator:
         
         # Medication Requests
         if med_requests:
-            request_text = "📋 **Medication Requests:**\n"
+            request_items = []
             for med in med_requests:
                 name = med.get('medicationCodeableConcept', {}).get('text') or med.get('medicationCodeableConcept', {}).get('coding', [{}])[0].get('display', 'Unknown')
                 status = med.get('status', '')
                 intent = med.get('intent', '')
                 date = med.get('authoredOn', '')
                 
+                # Skip UUIDs (medication names that look like UUIDs)
+                if name and len(name) == 36 and '-' in name:
+                    continue
+                
+                # Skip if no meaningful name
+                if not name or name == 'Unknown' or len(name) < 3:
+                    continue
+                
                 med_text = f"• {name}"
-                if status:
+                if status and status != 'unknown':
                     med_text += f" ({status})"
-                if intent:
+                if intent and intent != 'unknown':
                     med_text += f" - {intent}"
                 if date:
                     try:
@@ -374,19 +397,25 @@ class MedicalResponseGenerator:
                     except:
                         med_text += f" - {date}"
                 
-                request_text += med_text + "\n"
-            sections.append(request_text)
+                request_items.append(med_text)
+            
+            if request_items:
+                sections.append("📋 **Medication Requests:**\n" + "\n".join(request_items))
         
         # Medication Administrations
         if med_admins:
-            admin_text = "💊 **Medication Administrations:**\n"
+            admin_items = []
             for med in med_admins:
                 name = med.get('medicationCodeableConcept', {}).get('text') or med.get('medicationCodeableConcept', {}).get('coding', [{}])[0].get('display', 'Unknown')
                 status = med.get('status', '')
                 date = med.get('effectiveDateTime', '')
                 
+                # Skip if no meaningful name
+                if not name or name == 'Unknown' or len(name) < 3:
+                    continue
+                
                 med_text = f"• {name}"
-                if status:
+                if status and status != 'unknown':
                     med_text += f" ({status})"
                 if date:
                     try:
@@ -396,19 +425,26 @@ class MedicalResponseGenerator:
                     except:
                         med_text += f" - {date}"
                 
-                admin_text += med_text + "\n"
-            sections.append(admin_text)
+                admin_items.append(med_text)
+            
+            if admin_items:
+                sections.append("💊 **Medication Administrations:**\n" + "\n".join(admin_items))
         
         # Medication Dispenses
         if med_dispenses:
-            dispense_text = "🏥 **Medication Dispenses:**\n"
+            dispense_items = []
             for med in med_dispenses:
-                name = med.get('medicationCodeableConcept', {}).get('text') or med.get('medicationCodeableConcept', {}).get('coding', [{}])[0].get('display', 'Unknown')
+                coding = med.get('medicationCodeableConcept', {}).get('coding', [{}])[0]
+                name = med.get('medicationCodeableConcept', {}).get('text') or coding.get('display') or coding.get('code', 'Unknown')
                 status = med.get('status', '')
                 date = med.get('whenHandedOver', '')
                 
+                # Skip if no meaningful name
+                if not name or name == 'Unknown' or len(name) < 3:
+                    continue
+                
                 med_text = f"• {name}"
-                if status:
+                if status and status != 'unknown':
                     med_text += f" ({status})"
                 if date:
                     try:
@@ -418,8 +454,10 @@ class MedicalResponseGenerator:
                     except:
                         med_text += f" - {date}"
                 
-                dispense_text += med_text + "\n"
-            sections.append(dispense_text)
+                dispense_items.append(med_text)
+            
+            if dispense_items:
+                sections.append("🏥 **Medication Dispenses:**\n" + "\n".join(dispense_items))
         
         if not sections:
             return "No medications found"
@@ -441,12 +479,16 @@ class MedicalResponseGenerator:
             date = obs.get('effectiveDateTime', '')
             status = obs.get('status', '')
             
+            # Skip if no meaningful name
+            if not name or name == 'Unknown observation' or len(name) < 3:
+                continue
+            
             obs_text = f"• {name}"
             if value and value != 'No value':
                 obs_text += f": {value}"
                 if unit:
                     obs_text += f" {unit}"
-            if status:
+            if status and status != 'unknown':
                 obs_text += f" ({status})"
             if date:
                 try:
@@ -549,19 +591,84 @@ class MedicalResponseGenerator:
         if not conditions:
             return "No conditions found"
         
-        formatted = []
+        # Process all conditions (don't deduplicate - show timeline)
+        valid_conditions = []
+        
         for condition in conditions:
-            # Handle both regular conditions and PMH data
-            name = condition.get('name') or condition.get('condition_name', 'Unknown condition')
+            # Extract condition name
+            name = condition.get('name') or condition.get('condition_name', '')
+            
+            # If no name from regular fields, try to extract from FHIR code structure
+            if not name:
+                code = condition.get('code', {})
+                if code:
+                    coding = code.get('coding', [])
+                    if coding:
+                        name = coding[0].get('display') or coding[0].get('code', '')
+                    else:
+                        name = code.get('text', '')
+            
+            # Skip if no meaningful name
+            if not name or name == 'Unknown condition' or len(name) < 3:
+                continue
+            
+            # Skip non-medical entries like "And Family Support"
+            if isinstance(name, str):
+                if any(skip_word in name.lower() for skip_word in ['family support', 'and family', 'support']):
+                    continue
+                # Remove any JSON-like structures
+                if '[[' in name or ']]' in name or '{' in name:
+                    continue
+                # Clean up the name
+                name = name.strip()
+                if len(name) < 3:  # Skip very short names
+                    continue
+                
+                # Skip entries that are just fragments
+                if name.endswith(')') or name.endswith('___') or 'OMR' in name:
+                    continue
+            
+            valid_conditions.append(condition)
+        
+        formatted = []
+        for condition in valid_conditions:
+            # Extract condition details (name already extracted and validated above)
+            name = condition.get('name') or condition.get('condition_name', '')
+            if not name:
+                code = condition.get('code', {})
+                if code:
+                    coding = code.get('coding', [])
+                    if coding:
+                        name = coding[0].get('display') or coding[0].get('code', '')
+                    else:
+                        name = code.get('text', '')
+            
             status = condition.get('status', '')
             date = condition.get('date') or condition.get('chart_time', '')
             category = condition.get('category', '')
             
             condition_text = f"• {name}"
-            if status:
+            if status and status != 'unknown':
                 condition_text += f" ({status})"
-            if category and category != 'medical-history':
-                condition_text += f" [{category}]"
+            
+            # Handle category properly (avoid raw JSON)
+            if category:
+                if isinstance(category, list) and len(category) > 0:
+                    # Extract category from FHIR structure
+                    cat_coding = category[0].get('coding', [])
+                    if cat_coding:
+                        cat_display = cat_coding[0].get('display', '')
+                        if cat_display and cat_display not in ['Encounter Diagnosis', 'medical-history']:
+                            condition_text += f" [{cat_display}]"
+                elif isinstance(category, str) and category not in ['medical-history', 'encounter-diagnosis']:
+                    condition_text += f" [{category}]"
+            
+            # Add encounter information if available
+            encounter = condition.get('encounter', {})
+            if encounter and isinstance(encounter, dict) and encounter.get('reference'):
+                encounter_id = encounter['reference'].split('/')[-1]
+                condition_text += f" [Encounter: {encounter_id[:8]}...]"
+            
             if date:
                 try:
                     # Format the date nicely
@@ -575,6 +682,41 @@ class MedicalResponseGenerator:
         
         return "\n".join(formatted)
     
+    def _format_pmh_list(self, pmh_conditions: List[Dict]) -> str:
+        """Format PMH list for display"""
+        if not pmh_conditions:
+            return "No PMH found"
+        
+        formatted = []
+        for condition in pmh_conditions:
+            name = condition.get('condition_name', 'Unknown condition')
+            category = condition.get('category', '')
+            chart_time = condition.get('chart_time', '')
+            
+            # Skip non-medical entries
+            if not name or len(name) < 3 or 'family support' in name.lower():
+                continue
+            
+            pmh_text = f"• {name}"
+            if category and category != 'medical-history':
+                pmh_text += f" [{category}]"
+            
+            if chart_time:
+                try:
+                    # Format the date nicely
+                    date_obj = datetime.fromisoformat(chart_time.replace('Z', '+00:00'))
+                    formatted_date = date_obj.strftime('%m/%d/%Y')
+                    pmh_text += f" - {formatted_date}"
+                except:
+                    pmh_text += f" - {chart_time}"
+            
+            formatted.append(pmh_text)
+        
+        if not formatted:
+            return "No specific PMH conditions found"
+        
+        return "\n".join(formatted)
+    
     def _format_allergy_list(self, allergies: List[Dict]) -> str:
         """Format allergy list for display"""
         if not allergies:
@@ -582,17 +724,24 @@ class MedicalResponseGenerator:
         
         formatted = []
         for allergy in allergies:
-            name = allergy.get('name', 'Unknown allergy')
+            name = allergy.get('name') or allergy.get('allergy_name', 'Unknown allergy')
             severity = allergy.get('severity', '')
             reaction = allergy.get('reaction', '')
             
+            # Skip unknown or empty allergies
+            if not name or name == 'Unknown allergy' or len(name) < 3:
+                continue
+            
             allergy_text = f"• {name}"
-            if severity:
+            if severity and severity != 'unknown':
                 allergy_text += f" ({severity})"
             if reaction:
                 allergy_text += f" - {reaction}"
             
             formatted.append(allergy_text)
+        
+        if not formatted:
+            return "No specific allergies found"
         
         return "\n".join(formatted)
     
@@ -614,6 +763,15 @@ class MedicalResponseGenerator:
         
         if evidence.get('clinical_evidence'):
             info.append("📚 Clinical evidence available for treatment options")
+        
+        return "\n".join(info) if info else ""
+    
+    def _get_pmh_additional_info(self, pmh_conditions: List[Dict], evidence: Dict[str, Any]) -> str:
+        """Get additional PMH information"""
+        info = []
+        
+        if evidence.get('clinical_evidence'):
+            info.append("📚 Clinical evidence available for PMH conditions")
         
         return "\n".join(info) if info else ""
     

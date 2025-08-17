@@ -1,0 +1,68 @@
+{
+  "intent": "allergy_query",
+  "description": "Questions about patient allergies and allergic reactions",
+  "version": "1.0",
+  "created": "2025-01-16",
+  "last_updated": "2025-01-16",
+  "optimization_notes": "Working correctly - uses local database data",
+  
+  "prompt_template": {
+    "system_prompt": "You are a medical intent classification system. Return ONLY the intent name, nothing else.",
+    "user_prompt": "Classify the intent of this medical query:\n\nAvailable intents:\n- pmh_query: Questions about past medical history, PMH, medical history\n- condition_query: Questions about medical conditions, diagnoses, diseases\n- medication_query: Questions about medications, drugs, prescriptions\n- allergy_query: Questions about allergies, allergic reactions\n- observation_query: Questions about vital signs, lab results, measurements\n- encounter_query: Questions about hospital visits, appointments, encounters\n- procedure_query: Questions about medical procedures, surgeries, tests\n- specimen_query: Questions about lab samples, specimens, collections\n- interaction_query: Questions about drug interactions, contraindications\n- evidence_query: Questions about clinical evidence, studies, guidelines\n- alert_query: Questions about clinical alerts, warnings, risks\n- general_query: General medical questions or unclear intent\n\nQuery: \"{query}\"\n\nReturn ONLY the intent name."
+  },
+  
+  "keywords": [
+    "allergy",
+    "allergies",
+    "allergic",
+    "reaction",
+    "intolerance",
+    "known allergies",
+    "allergy list",
+    "drug allergy",
+    "food allergy",
+    "patient allergies",
+    "what allergies"
+  ],
+  
+  "example_queries": [
+    "What allergies does this patient have?",
+    "What is the patient allergic to?",
+    "Show me the patient's allergies",
+    "What allergic reactions has the patient had?",
+    "Patient's known allergies",
+    "Allergy list",
+    "Drug allergies"
+  ],
+  
+  "negative_examples": [
+    "What medications is the patient taking?",
+    "What conditions does the patient have?",
+    "Patient's vital signs",
+    "What procedures has the patient had?"
+  ],
+  
+  "performance_metrics": {
+    "accuracy": 0.0,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1_score": 0.0,
+    "test_count": 0,
+    "last_tested": null
+  },
+  
+  "optimization_history": [
+    {
+      "date": "2025-01-16",
+      "change": "Fixed allergy name field mapping",
+      "reason": "Allergy data uses 'allergy_name' field, not 'name'",
+      "result": "Allergies now display correctly"
+    }
+  ],
+  
+  "data_source": {
+    "primary": "local_database",
+    "endpoint": "/local/patients/{id}/allergies",
+    "description": "Allergy data extracted from Excel files and stored in local database"
+  }
+}
