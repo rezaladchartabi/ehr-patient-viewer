@@ -29,12 +29,18 @@ class RagService:
             except Exception as e:
                 logger.error(f"RAG: Failed to create store directory: {e}")
                 pass
-            try:
-                self._client = chromadb.PersistentClient(path=self.store_path)
-                logger.info(f"RAG: ChromaDB client initialized successfully")
-            except Exception as e:
-                logger.error(f"RAG: Failed to initialize ChromaDB client: {e}")
-                self._client = None
+                try:
+                    # Set environment variables to disable telemetry
+                    os.environ["ANONYMIZED_TELEMETRY"] = "false"
+                    os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
+                    os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
+                    os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = "*"
+                    
+                    self._client = chromadb.PersistentClient(path=self.store_path)
+                    logger.info(f"RAG: ChromaDB client initialized successfully")
+                except Exception as e:
+                    logger.error(f"RAG: Failed to initialize ChromaDB client: {e}")
+                    self._client = None
             # Initialize sentence-transformers (BGE-M3 by default)
             model_name = os.getenv("RAG_EMBED_MODEL", "BAAI/bge-m3")
             try:
