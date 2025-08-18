@@ -1,0 +1,125 @@
+import os
+from typing import List, Dict, Any, Optional
+
+try:
+    import chromadb  # type: ignore
+except Exception:  # pragma: no cover
+    chromadb = None
+
+try:
+    from sentence_transformers import SentenceTransformer  # type: ignore
+except Exception:  # pragma: no cover
+    SentenceTransformer = None
+
+_DEFAULT_STORE = os.getenv("RAG_STORE_PATH", "backend/.chroma-rag")
+_DEFAULT_TOPK = int(os.getenv("RAG_TOP_K", "8"))
+
+class RagService:
+    def __init__(self, store_path: str = _DEFAULT_STORE):
+        self.enabled = os.getenv("RAG_ENABLED", "false").lower() == "true"
+        self.store_path = store_path
+        self._client = None
+        self._collections: Dict[str, Any] = {}
+        self._model = None
+
+        if self.enabled and chromadb is not None:
+            # Ensure store directory exists
+            try:
+                os.makedirs(self.store_path, exist_ok=True)
+            except Exception:
+                pass
+            self._client = chromadb.PersistentClient(path=self.store_path)
+            # Initialize sentence-transformers (BGE-M3 by default)
+            model_name = os.getenv("RAG_EMBED_MODEL", "BAAI/bge-m3")
+            if SentenceTransformer is not None:
+                try:
+                    self._model = SentenceTransformer(model_name)
+                except Exception:
+                    self._model = None
+
+    def _get_collection(self, name: str):
+        if not self._client:
+            return None
+        if name not in self._collections:
+            self._collections[name] = self._client.get_or_create_collection(
+                name=name, metadata={"hnsw:space": "cosine"}
+            )
+        return self._collections[name]
+
+    def health(self) -> Dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "store_path": self.store_path,
+            "collections": list(self._collections.keys()),
+            "client": bool(self._client) if self.enabled else False,
+        }
+
+    def index_documents(self, documents: List[Dict[str, Any]], collection: str = "patient") -> Dict[str, Any]:
+        if not self.enabled:
+            return {"status": "disabled"}
+        col = self._get_collection(collection)
+        if col is None:
+            return {"status": "error", "message": "Chroma not available"}
+
+        def _primitive(v):
+            return isinstance(v, (str, int, float, bool)) or v is None
+
+        def _sanitize(meta: Dict[str, Any]) -> Dict[str, Any]:
+            out = {}
+            for k, v in (meta or {}).items():
+                # Drop nested/large objects like note_metadata
+                if k == "note_metadata":
+                    continue
+                if _primitive(v):
+                    out[k] = v
+                else:
+                    try:
+                        out[k] = str(v)
+                    except Exception:
+                        pass
+            return out
+
+        ids = [d["id"] for d in documents]
+        texts = [d["text"] for d in documents]
+        metadatas = [_sanitize(d.get("metadata", {})) for d in documents]
+        embeddings = None
+        if self._model is not None:
+            passages = [f"passage: {t}" for t in texts]
+            vecs = self._model.encode(passages, normalize_embeddings=True)
+            embeddings = [v.tolist() for v in vecs]
+        if embeddings is not None:
+            col.add(ids=ids, embeddings=embeddings, metadatas=metadatas, documents=texts)
+        else:
+            col.add(ids=ids, documents=texts, metadatas=metadatas)
+        return {"status": "ok", "count": len(ids)}
+
+    def search(self, query: str, top_k: Optional[int] = None, collection: str = "patient", filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if not self.enabled:
+            return {"hits": []}
+        col = self._get_collection(collection)
+        if col is None:
+            return {"hits": []}
+        k = top_k or _DEFAULT_TOPK
+        if self._model is not None:
+            qv = self._model.encode([f"query: {query}"], normalize_embeddings=True)
+            if filters:
+                res = col.query(query_embeddings=qv.tolist(), n_results=k, where=filters)
+            else:
+                res = col.query(query_embeddings=qv.tolist(), n_results=k)
+        else:
+            if filters:
+                res = col.query(query_texts=[query], n_results=k, where=filters)
+            else:
+                res = col.query(query_texts=[query], n_results=k)
+        # Normalize output
+        hits = []
+        for i in range(len(res.get("ids", [[]])[0])):
+            hits.append({
+                "id": res["ids"][0][i],
+                "text": res["documents"][0][i],
+                "metadata": res.get("metadatas", [[{}]])[0][i],
+                "score": res.get("distances", [[None]])[0][i],
+            })
+        return {"hits": hits}
+
+
