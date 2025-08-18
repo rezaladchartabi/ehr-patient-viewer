@@ -4,7 +4,7 @@ services:
     name: ehr-backend
     env: python
     buildCommand: pip install -r backend/requirements.txt
-    startCommand: cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -14,6 +14,18 @@ services:
         value: https://fdfbc9a33dc5.ngrok-free.app/fhir
       - key: AUTO_SYNC_ON_STARTUP
         value: true
+      - key: RAG_ENABLED
+        value: true
+      - key: RAG_STORE_PATH
+        value: /data/chroma
+      - key: RAG_EMBED_MODEL
+        value: sentence-transformers/paraphrase-MiniLM-L6-v2
+      - key: HF_HOME
+        value: /data/hf_cache
+    disk:
+      name: ehr-backend-data
+      mountPath: /data
+      sizeGB: 5
 
   # Frontend Static Site
   - type: web
