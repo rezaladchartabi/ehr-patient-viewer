@@ -58,3 +58,4 @@ jspm_packages/
 
 # Deployment files
 deployment/
+backend/sample_clinical_notes.xlsx
