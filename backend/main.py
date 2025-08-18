@@ -116,6 +116,30 @@ optimized_cache = OptimizedCache(max_size=2000)
 # Initialize FastAPI app
 app = FastAPI(title="EHR FHIR Proxy", version="1.0.0")
 
+# RAG router mount diagnostics
+rag_router_mounted: bool = False
+rag_router_mount_error: Optional[str] = None
+
+try:
+    from backend.rag import router as rag_router  # when running as module
+    app.include_router(rag_router)
+    rag_router_mounted = True
+    logger.info("Mounted RAG router from backend.rag")
+except Exception as e:
+    logger.exception("Failed to mount RAG router from backend.rag")
+    rag_router_mount_error = str(e)
+    try:
+        from rag import router as rag_router  # when running in package root
+        app.include_router(rag_router)
+        rag_router_mounted = True
+        logger.info("Mounted RAG router from rag (package root)")
+    except Exception as e2:
+        logger.exception("Failed to mount RAG router from rag (package root)")
+        rag_router_mount_error = (rag_router_mount_error or "") + (" | " if rag_router_mount_error else "") + str(e2)
+
+if not rag_router_mounted:
+    logger.warning("RAG router not mounted; /rag endpoints will be unavailable")
+
 # Add middleware
 app.add_middleware(
     CORSMiddleware,
@@ -1098,7 +1122,9 @@ def read_root():
         "message": "EHR FHIR Proxy is running",
         "fhir_server": FHIR_BASE_URL,
         "cache_ttl": CACHE_TTL,
-        "rate_limit": f"{RATE_LIMIT_REQUESTS} requests per {RATE_LIMIT_WINDOW} seconds"
+        "rate_limit": f"{RATE_LIMIT_REQUESTS} requests per {RATE_LIMIT_WINDOW} seconds",
+        "rag_router_mounted": rag_router_mounted,
+        "rag_router_mount_error": rag_router_mount_error
     }
 
 @app.get("/Patient")
