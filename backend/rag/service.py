@@ -26,15 +26,24 @@ class RagService:
             # Ensure store directory exists
             try:
                 os.makedirs(self.store_path, exist_ok=True)
-            except Exception:
+                print(f"RAG: Created/verified store directory: {self.store_path}")
+            except Exception as e:
+                print(f"RAG: Failed to create store directory: {e}")
                 pass
-            self._client = chromadb.PersistentClient(path=self.store_path)
+            try:
+                self._client = chromadb.PersistentClient(path=self.store_path)
+                print(f"RAG: ChromaDB client initialized successfully")
+            except Exception as e:
+                print(f"RAG: Failed to initialize ChromaDB client: {e}")
+                self._client = None
             # Initialize sentence-transformers (BGE-M3 by default)
             model_name = os.getenv("RAG_EMBED_MODEL", "BAAI/bge-m3")
             if SentenceTransformer is not None:
                 try:
                     self._model = SentenceTransformer(model_name)
-                except Exception:
+                    print(f"RAG: SentenceTransformer model loaded: {model_name}")
+                except Exception as e:
+                    print(f"RAG: Failed to load SentenceTransformer model: {e}")
                     self._model = None
 
     def _get_collection(self, name: str):
