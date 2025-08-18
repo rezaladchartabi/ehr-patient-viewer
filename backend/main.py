@@ -120,6 +120,17 @@ app = FastAPI(title="EHR FHIR Proxy", version="1.0.0")
 rag_router_mounted: bool = False
 rag_router_mount_error: Optional[str] = None
 
+# Make imports robust regardless of working directory
+try:
+    _HERE = os.path.abspath(os.path.dirname(__file__))
+    _ROOT = os.path.abspath(os.path.join(_HERE, os.pardir))
+    if _HERE not in sys.path:
+        sys.path.insert(0, _HERE)
+    if _ROOT not in sys.path:
+        sys.path.insert(0, _ROOT)
+except Exception as _e:
+    logger.debug(f"Failed to adjust sys.path for RAG import: {_e}")
+
 try:
     from backend.rag import router as rag_router  # when running as module
     app.include_router(rag_router)
