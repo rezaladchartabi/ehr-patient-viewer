@@ -17,15 +17,11 @@ services:
       - key: RAG_ENABLED
         value: true
       - key: RAG_STORE_PATH
-        value: /data/chroma
+        value: ./chroma-rag
       - key: RAG_EMBED_MODEL
         value: sentence-transformers/paraphrase-MiniLM-L6-v2
       - key: HF_HOME
-        value: /data/hf_cache
-    disk:
-      name: ehr-backend-data
-      mountPath: /data
-      sizeGB: 5
+        value: ./hf_cache
 
   # Frontend Static Site
   - type: web
