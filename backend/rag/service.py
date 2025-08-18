@@ -1,15 +1,13 @@
 import os
+import logging
 from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
 
 try:
     import chromadb  # type: ignore
 except Exception:  # pragma: no cover
     chromadb = None
-
-try:
-    from sentence_transformers import SentenceTransformer  # type: ignore
-except Exception:  # pragma: no cover
-    SentenceTransformer = None
 
 _DEFAULT_STORE = os.getenv("RAG_STORE_PATH", "backend/.chroma-rag")
 _DEFAULT_TOPK = int(os.getenv("RAG_TOP_K", "8"))
@@ -23,28 +21,29 @@ class RagService:
         self._model = None
 
         if self.enabled and chromadb is not None:
+            logger.info(f"RAG: Initializing with store_path={self.store_path}")
             # Ensure store directory exists
             try:
                 os.makedirs(self.store_path, exist_ok=True)
-                print(f"RAG: Created/verified store directory: {self.store_path}")
+                logger.info(f"RAG: Created/verified store directory: {self.store_path}")
             except Exception as e:
-                print(f"RAG: Failed to create store directory: {e}")
+                logger.error(f"RAG: Failed to create store directory: {e}")
                 pass
             try:
                 self._client = chromadb.PersistentClient(path=self.store_path)
-                print(f"RAG: ChromaDB client initialized successfully")
+                logger.info(f"RAG: ChromaDB client initialized successfully")
             except Exception as e:
-                print(f"RAG: Failed to initialize ChromaDB client: {e}")
+                logger.error(f"RAG: Failed to initialize ChromaDB client: {e}")
                 self._client = None
             # Initialize sentence-transformers (BGE-M3 by default)
             model_name = os.getenv("RAG_EMBED_MODEL", "BAAI/bge-m3")
-            if SentenceTransformer is not None:
-                try:
-                    self._model = SentenceTransformer(model_name)
-                    print(f"RAG: SentenceTransformer model loaded: {model_name}")
-                except Exception as e:
-                    print(f"RAG: Failed to load SentenceTransformer model: {e}")
-                    self._model = None
+            try:
+                from sentence_transformers import SentenceTransformer  # type: ignore
+                self._model = SentenceTransformer(model_name)
+                logger.info(f"RAG: SentenceTransformer model loaded: {model_name}")
+            except Exception as e:
+                logger.error(f"RAG: Failed to load SentenceTransformer model: {e}")
+                self._model = None
 
     def _get_collection(self, name: str):
         if not self._client:
