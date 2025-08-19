@@ -32,36 +32,31 @@ class RagService:
                 logger.error(f"RAG: Failed to create store directory: {e}")
                 pass
             
-            # Set environment variables to disable telemetry and configure ChromaDB
-            os.environ["ANONYMIZED_TELEMETRY"] = "false"
-            os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
-            os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
-            os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = '["*"]'  # JSON array format
-            
-            # Reduce memory/threads to fit small instances
-            os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-            os.environ.setdefault("OMP_NUM_THREADS", "1")
-            os.environ.setdefault("MKL_NUM_THREADS", "1")
-            
-            logger.info(f"RAG: About to initialize ChromaDB client with path: {self.store_path}")
-            logger.info(f"RAG: Current working directory: {os.getcwd()}")
-            logger.info(f"RAG: Directory exists: {os.path.exists(self.store_path)}")
-            
-            # Try in-memory client first for Render free tier
             try:
+                # Set environment variables to disable telemetry and configure ChromaDB
+                os.environ["ANONYMIZED_TELEMETRY"] = "false"
+                os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
+                os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
+                os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = '["*"]'  # JSON array format
+                
+                # Reduce memory/threads to fit small instances
+                os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+                os.environ.setdefault("OMP_NUM_THREADS", "1")
+                os.environ.setdefault("MKL_NUM_THREADS", "1")
+                
+                logger.info(f"RAG: About to initialize ChromaDB client with path: {self.store_path}")
+                logger.info(f"RAG: Current working directory: {os.getcwd()}")
+                logger.info(f"RAG: Directory exists: {os.path.exists(self.store_path)}")
+                
+                # Initialize ChromaDB client
                 self._client = chromadb.Client()
-                logger.info(f"RAG: ChromaDB in-memory client initialized successfully")
-            except Exception as mem_error:
-                logger.warning(f"RAG: In-memory client failed, trying persistent: {mem_error}")
-                try:
-                    self._client = chromadb.PersistentClient(path=self.store_path)
-                    logger.info(f"RAG: ChromaDB persistent client initialized successfully")
-                except Exception as e:
-                    logger.error(f"RAG: Failed to initialize ChromaDB client: {e}")
-                    logger.error(f"RAG: Exception type: {type(e).__name__}")
-                    import traceback
-                    logger.error(f"RAG: Full traceback: {traceback.format_exc()}")
-                    self._client = None
+                logger.info(f"RAG: ChromaDB client initialized successfully")
+            except Exception as e:
+                logger.error(f"RAG: Failed to initialize ChromaDB client: {e}")
+                logger.error(f"RAG: Exception type: {type(e).__name__}")
+                import traceback
+                logger.error(f"RAG: Full traceback: {traceback.format_exc()}")
+                self._client = None
             
             # Initialize sentence-transformers (configurable; allow disabling to avoid OOM)
             model_name = os.getenv("RAG_EMBED_MODEL", "disabled")
