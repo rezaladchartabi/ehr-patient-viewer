@@ -6,7 +6,9 @@ logger = logging.getLogger(__name__)
 
 try:
     import chromadb  # type: ignore
-except Exception:  # pragma: no cover
+    logger.info(f"RAG: ChromaDB imported successfully, version: {chromadb.__version__}")
+except Exception as e:  # pragma: no cover
+    logger.error(f"RAG: Failed to import ChromaDB: {e}")
     chromadb = None
 
 _DEFAULT_STORE = os.getenv("RAG_STORE_PATH", "backend/.chroma-rag")
@@ -29,31 +31,33 @@ class RagService:
             except Exception as e:
                 logger.error(f"RAG: Failed to create store directory: {e}")
                 pass
+            
+            try:
+                # Set environment variables to disable telemetry
+                os.environ["ANONYMIZED_TELEMETRY"] = "false"
+                os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
+                os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
+                os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = "*"
+                
+                logger.info(f"RAG: About to initialize ChromaDB client with path: {self.store_path}")
+                logger.info(f"RAG: Current working directory: {os.getcwd()}")
+                logger.info(f"RAG: Directory exists: {os.path.exists(self.store_path)}")
+                
+                # Try in-memory client first for Render free tier
                 try:
-                    # Set environment variables to disable telemetry
-                    os.environ["ANONYMIZED_TELEMETRY"] = "false"
-                    os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
-                    os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
-                    os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = "*"
-                    
-                    logger.info(f"RAG: About to initialize ChromaDB client with path: {self.store_path}")
-                    logger.info(f"RAG: Current working directory: {os.getcwd()}")
-                    logger.info(f"RAG: Directory exists: {os.path.exists(self.store_path)}")
-                    
-                    # Try in-memory client first for Render free tier
-                    try:
-                        self._client = chromadb.Client()
-                        logger.info(f"RAG: ChromaDB in-memory client initialized successfully")
-                    except Exception as mem_error:
-                        logger.warning(f"RAG: In-memory client failed, trying persistent: {mem_error}")
-                        self._client = chromadb.PersistentClient(path=self.store_path)
-                        logger.info(f"RAG: ChromaDB persistent client initialized successfully")
-                except Exception as e:
-                    logger.error(f"RAG: Failed to initialize ChromaDB client: {e}")
-                    logger.error(f"RAG: Exception type: {type(e).__name__}")
-                    import traceback
-                    logger.error(f"RAG: Full traceback: {traceback.format_exc()}")
-                    self._client = None
+                    self._client = chromadb.Client()
+                    logger.info(f"RAG: ChromaDB in-memory client initialized successfully")
+                except Exception as mem_error:
+                    logger.warning(f"RAG: In-memory client failed, trying persistent: {mem_error}")
+                    self._client = chromadb.PersistentClient(path=self.store_path)
+                    logger.info(f"RAG: ChromaDB persistent client initialized successfully")
+            except Exception as e:
+                logger.error(f"RAG: Failed to initialize ChromaDB client: {e}")
+                logger.error(f"RAG: Exception type: {type(e).__name__}")
+                import traceback
+                logger.error(f"RAG: Full traceback: {traceback.format_exc()}")
+                self._client = None
+            
             # Initialize sentence-transformers (BGE-M3 by default)
             model_name = os.getenv("RAG_EMBED_MODEL", "BAAI/bge-m3")
             try:
