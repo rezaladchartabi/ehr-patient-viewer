@@ -78,11 +78,21 @@ class RagService:
         return self._collections[name]
 
     def health(self) -> Dict[str, Any]:
+        # Try to initialize client if not already done
+        if self.enabled and self._client is None and chromadb is not None:
+            try:
+                logger.info("RAG: Attempting to initialize client in health check")
+                self._client = chromadb.Client()
+                logger.info("RAG: Client initialized successfully in health check")
+            except Exception as e:
+                logger.error(f"RAG: Failed to initialize client in health check: {e}")
+        
         return {
             "enabled": self.enabled,
             "store_path": self.store_path,
             "collections": list(self._collections.keys()),
             "client": bool(self._client) if self.enabled else False,
+            "chromadb_available": chromadb is not None,
         }
 
     def index_documents(self, documents: List[Dict[str, Any]], collection: str = "patient") -> Dict[str, Any]:
