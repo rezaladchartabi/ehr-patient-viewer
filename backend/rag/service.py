@@ -33,30 +33,31 @@ class RagService:
                 pass
             
             try:
-                # Set environment variables to disable telemetry
+                # Set environment variables to disable telemetry and configure ChromaDB
                 os.environ["ANONYMIZED_TELEMETRY"] = "false"
+                os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
+                os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
+                os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = '["*"]'  # JSON array format
+                
                 # Reduce memory/threads to fit small instances
                 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
                 os.environ.setdefault("OMP_NUM_THREADS", "1")
                 os.environ.setdefault("MKL_NUM_THREADS", "1")
-                # Don't set ChromaDB server env vars as they're causing parsing errors
-                # These were removed to fix "error parsing env var" issues
-                # os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
-                # os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
-                # os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = "*"
                 
                 logger.info(f"RAG: About to initialize ChromaDB client with path: {self.store_path}")
                 logger.info(f"RAG: Current working directory: {os.getcwd()}")
                 logger.info(f"RAG: Directory exists: {os.path.exists(self.store_path)}")
                 
-                # Try in-memory client first for Render free tier
+                # Use simple client config to avoid env var issues
                 try:
-                    self._client = chromadb.Client()
-                    logger.info(f"RAG: ChromaDB in-memory client initialized successfully")
-                except Exception as mem_error:
-                    logger.warning(f"RAG: In-memory client failed, trying persistent: {mem_error}")
-                    self._client = chromadb.PersistentClient(path=self.store_path)
-                    logger.info(f"RAG: ChromaDB persistent client initialized successfully")
+                    from chromadb.config import Settings
+                    settings = Settings(
+                        anonymized_telemetry=False,
+                        allow_reset=True,
+                        is_persistent=False  # Use in-memory for Render free tier
+                    )
+                    self._client = chromadb.Client(settings)
+                    logger.info(f"RAG: ChromaDB in-memory client initialized with custom settings")
             except Exception as e:
                 logger.error(f"RAG: Failed to initialize ChromaDB client: {e}")
                 logger.error(f"RAG: Exception type: {type(e).__name__}")
