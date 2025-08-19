@@ -51,26 +51,23 @@ class RagService:
                 # Initialize ChromaDB client
                 self._client = chromadb.Client()
                 logger.info(f"RAG: ChromaDB client initialized successfully")
+                
+                # Initialize sentence-transformers (configurable; allow disabling to avoid OOM)
+                model_name = os.getenv("RAG_EMBED_MODEL", "disabled")
+                if model_name.lower() in ("disabled", "none", "off", "false"):
+                    logger.info("RAG: Embedding model disabled via RAG_EMBED_MODEL")
+                    self._model = None
+                else:
+                    from sentence_transformers import SentenceTransformer  # type: ignore
+                    self._model = SentenceTransformer(model_name)
+                    logger.info(f"RAG: SentenceTransformer model loaded: {model_name}")
             except Exception as e:
-                logger.error(f"RAG: Failed to initialize ChromaDB client: {e}")
+                logger.error(f"RAG: Failed to initialize RAG service: {e}")
                 logger.error(f"RAG: Exception type: {type(e).__name__}")
                 import traceback
                 logger.error(f"RAG: Full traceback: {traceback.format_exc()}")
                 self._client = None
-            
-            # Initialize sentence-transformers (configurable; allow disabling to avoid OOM)
-            model_name = os.getenv("RAG_EMBED_MODEL", "disabled")
-            if model_name.lower() in ("disabled", "none", "off", "false"):
-                logger.info("RAG: Embedding model disabled via RAG_EMBED_MODEL")
                 self._model = None
-            else:
-                try:
-                    from sentence_transformers import SentenceTransformer  # type: ignore
-                    self._model = SentenceTransformer(model_name)
-                    logger.info(f"RAG: SentenceTransformer model loaded: {model_name}")
-                except Exception as e:
-                    logger.error(f"RAG: Failed to load SentenceTransformer model: {e}")
-                    self._model = None
 
     def _get_collection(self, name: str):
         if not self._client:
