@@ -32,22 +32,22 @@ class RagService:
                 logger.error(f"RAG: Failed to create store directory: {e}")
                 pass
             
+            # Set environment variables to disable telemetry and configure ChromaDB
+            os.environ["ANONYMIZED_TELEMETRY"] = "false"
+            os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
+            os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
+            os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = '["*"]'  # JSON array format
+            
+            # Reduce memory/threads to fit small instances
+            os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+            os.environ.setdefault("OMP_NUM_THREADS", "1")
+            os.environ.setdefault("MKL_NUM_THREADS", "1")
+            
+            logger.info(f"RAG: About to initialize ChromaDB client with path: {self.store_path}")
+            logger.info(f"RAG: Current working directory: {os.getcwd()}")
+            logger.info(f"RAG: Directory exists: {os.path.exists(self.store_path)}")
+            
             try:
-                # Set environment variables to disable telemetry and configure ChromaDB
-                os.environ["ANONYMIZED_TELEMETRY"] = "false"
-                os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
-                os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
-                os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = '["*"]'  # JSON array format
-                
-                # Reduce memory/threads to fit small instances
-                os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
-                os.environ.setdefault("OMP_NUM_THREADS", "1")
-                os.environ.setdefault("MKL_NUM_THREADS", "1")
-                
-                logger.info(f"RAG: About to initialize ChromaDB client with path: {self.store_path}")
-                logger.info(f"RAG: Current working directory: {os.getcwd()}")
-                logger.info(f"RAG: Directory exists: {os.path.exists(self.store_path)}")
-                
                 # Initialize ChromaDB client
                 self._client = chromadb.Client()
                 logger.info(f"RAG: ChromaDB client initialized successfully")
