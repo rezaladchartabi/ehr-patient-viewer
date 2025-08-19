@@ -19,7 +19,7 @@ services:
       - key: RAG_STORE_PATH
         value: ./chroma-rag
       - key: RAG_EMBED_MODEL
-        value: sentence-transformers/paraphrase-MiniLM-L6-v2
+        value: disabled
       - key: HF_HOME
         value: ./hf_cache
       - key: ANONYMIZED_TELEMETRY

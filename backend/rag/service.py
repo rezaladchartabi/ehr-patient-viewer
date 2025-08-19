@@ -35,6 +35,10 @@ class RagService:
             try:
                 # Set environment variables to disable telemetry
                 os.environ["ANONYMIZED_TELEMETRY"] = "false"
+                # Reduce memory/threads to fit small instances
+                os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+                os.environ.setdefault("OMP_NUM_THREADS", "1")
+                os.environ.setdefault("MKL_NUM_THREADS", "1")
                 # Don't set ChromaDB server env vars as they're causing parsing errors
                 # These were removed to fix "error parsing env var" issues
                 # os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
@@ -60,15 +64,19 @@ class RagService:
                 logger.error(f"RAG: Full traceback: {traceback.format_exc()}")
                 self._client = None
             
-            # Initialize sentence-transformers (BGE-M3 by default)
-            model_name = os.getenv("RAG_EMBED_MODEL", "BAAI/bge-m3")
-            try:
-                from sentence_transformers import SentenceTransformer  # type: ignore
-                self._model = SentenceTransformer(model_name)
-                logger.info(f"RAG: SentenceTransformer model loaded: {model_name}")
-            except Exception as e:
-                logger.error(f"RAG: Failed to load SentenceTransformer model: {e}")
+            # Initialize sentence-transformers (configurable; allow disabling to avoid OOM)
+            model_name = os.getenv("RAG_EMBED_MODEL", "disabled")
+            if model_name.lower() in ("disabled", "none", "off", "false"):
+                logger.info("RAG: Embedding model disabled via RAG_EMBED_MODEL")
                 self._model = None
+            else:
+                try:
+                    from sentence_transformers import SentenceTransformer  # type: ignore
+                    self._model = SentenceTransformer(model_name)
+                    logger.info(f"RAG: SentenceTransformer model loaded: {model_name}")
+                except Exception as e:
+                    logger.error(f"RAG: Failed to load SentenceTransformer model: {e}")
+                    self._model = None
 
     def _get_collection(self, name: str):
         if not self._client:
