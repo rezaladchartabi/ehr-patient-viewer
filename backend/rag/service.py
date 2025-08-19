@@ -36,10 +36,17 @@ class RagService:
                     os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
                     os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = "*"
                     
+                    logger.info(f"RAG: About to initialize ChromaDB client with path: {self.store_path}")
+                    logger.info(f"RAG: Current working directory: {os.getcwd()}")
+                    logger.info(f"RAG: Directory exists: {os.path.exists(self.store_path)}")
+                    
                     self._client = chromadb.PersistentClient(path=self.store_path)
                     logger.info(f"RAG: ChromaDB client initialized successfully")
                 except Exception as e:
                     logger.error(f"RAG: Failed to initialize ChromaDB client: {e}")
+                    logger.error(f"RAG: Exception type: {type(e).__name__}")
+                    import traceback
+                    logger.error(f"RAG: Full traceback: {traceback.format_exc()}")
                     self._client = None
             # Initialize sentence-transformers (BGE-M3 by default)
             model_name = os.getenv("RAG_EMBED_MODEL", "BAAI/bge-m3")
