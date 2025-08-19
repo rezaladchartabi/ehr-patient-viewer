@@ -40,8 +40,14 @@ class RagService:
                     logger.info(f"RAG: Current working directory: {os.getcwd()}")
                     logger.info(f"RAG: Directory exists: {os.path.exists(self.store_path)}")
                     
-                    self._client = chromadb.PersistentClient(path=self.store_path)
-                    logger.info(f"RAG: ChromaDB client initialized successfully")
+                    # Try in-memory client first for Render free tier
+                    try:
+                        self._client = chromadb.Client()
+                        logger.info(f"RAG: ChromaDB in-memory client initialized successfully")
+                    except Exception as mem_error:
+                        logger.warning(f"RAG: In-memory client failed, trying persistent: {mem_error}")
+                        self._client = chromadb.PersistentClient(path=self.store_path)
+                        logger.info(f"RAG: ChromaDB persistent client initialized successfully")
                 except Exception as e:
                     logger.error(f"RAG: Failed to initialize ChromaDB client: {e}")
                     logger.error(f"RAG: Exception type: {type(e).__name__}")
