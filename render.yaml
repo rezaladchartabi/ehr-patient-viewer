@@ -24,12 +24,6 @@ services:
         value: ./hf_cache
       - key: ANONYMIZED_TELEMETRY
         value: false
-      - key: CHROMA_SERVER_HOST
-        value: 0.0.0.0
-      - key: CHROMA_SERVER_HTTP_PORT
-        value: 8000
-      - key: CHROMA_SERVER_CORS_ALLOW_ORIGINS
-        value: "*"
 
   # Frontend Static Site
   - type: web

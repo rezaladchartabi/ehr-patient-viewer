@@ -35,9 +35,10 @@ class RagService:
             try:
                 # Set environment variables to disable telemetry
                 os.environ["ANONYMIZED_TELEMETRY"] = "false"
-                os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
-                os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
-                os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = "*"
+                # Don't set ChromaDB server env vars as they're causing parsing errors
+                # os.environ["CHROMA_SERVER_HOST"] = "0.0.0.0"
+                # os.environ["CHROMA_SERVER_HTTP_PORT"] = "8000"
+                # os.environ["CHROMA_SERVER_CORS_ALLOW_ORIGINS"] = "*"
                 
                 logger.info(f"RAG: About to initialize ChromaDB client with path: {self.store_path}")
                 logger.info(f"RAG: Current working directory: {os.getcwd()}")
