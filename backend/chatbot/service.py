@@ -118,9 +118,6 @@ class ChatbotService:
         else:
             self.rag_service = None
         
-        # Cache for patient data
-        self.patient_cache: Dict[str, Dict] = {}
-        
     async def process_query(self, message: str, patient_id: str, conversation_id: str) -> Dict[str, Any]:
         """Process a user query and generate a response"""
         try:
@@ -223,9 +220,8 @@ class ChatbotService:
     
     async def _get_patient_data(self, patient_id: str) -> Dict[str, Any]:
         """Get comprehensive patient data from database and FHIR server"""
-        if patient_id in self.patient_cache:
-            return self.patient_cache[patient_id]
-        
+        # Remove caching to ensure fresh data for each patient interaction
+        # This matches the behavior of other tabs in the UI
         try:
             # Initialize comprehensive patient data structure
             patient_data = {
@@ -342,9 +338,6 @@ class ChatbotService:
                 patient_data["medication_administrations"] + 
                 patient_data["medication_dispenses"]
             )
-            
-            # Cache the comprehensive data
-            self.patient_cache[patient_id] = patient_data
             
             # Log summary
             logger.info(f"Fetched comprehensive patient data for {patient_id}:")

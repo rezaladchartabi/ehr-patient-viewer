@@ -33,7 +33,7 @@ interface ResourceData {
   conditions: any[];
 }
 
-const API_BASE = 'https://ehr-backend-87r9.onrender.com';
+const API_BASE = process.env.REACT_APP_API_BASE_URL || 'https://ehr-backend-87r9.onrender.com';
 
 function App() {
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -61,16 +61,20 @@ function App() {
 
   // Load patients on mount
   useEffect(() => {
-    // Load patients from RAG system first, then fallback to FHIR
-    fetch(`${API_BASE}/rag/patient/notes`)
-      .then(res => res.json())
+    setLoading(true);
+    
+    // Load real patients from notes Excel file
+    fetch(`${API_BASE}/local/notes/patients`)
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        return res.json();
+      })
       .then(data => {
-        if (data.notes && data.notes.length > 0) {
-          // Extract unique patient identifiers from RAG data
-          const patientIds = Array.from(new Set(data.notes.map((note: any) => note.metadata?.patient_identifier).filter(Boolean))) as string[];
-          
-          // Create patient objects from the RAG data
-          const ragPatients = patientIds.slice(0, 20).map((patientId: string) => ({
+        if (data.patients && data.patients.length > 0) {
+          // Create patient objects from the real notes data
+          const realPatients = data.patients.map((patientId: string) => ({
             id: patientId,
             family_name: `Patient ${patientId}`,
             gender: 'unknown',
@@ -78,54 +82,24 @@ function App() {
             identifier: patientId
           }));
           
-          setPatients(ragPatients);
-          console.log(`Loaded ${ragPatients.length} patients from RAG system`);
+          setPatients(realPatients);
+          console.log(`✅ Loaded ${realPatients.length} real patients from notes data`);
+          
+          // Auto-select first patient
+          if (realPatients.length > 0) {
+            setSelectedPatient(realPatients[0]);
+          }
         } else {
-          // Fallback to FHIR server
-          fetch(`${API_BASE}/local/patients?limit=100&offset=0`)
-            .then(res => res.json())
-            .then(fhirData => {
-              if (fhirData.patients && fhirData.patients.length > 0) {
-                setPatients(fhirData.patients);
-              } else {
-                console.log('No patients found, using test patient');
-                setPatients([
-                  {
-                    id: '18887130',
-                    family_name: 'Test Patient',
-                    gender: 'male',
-                    birth_date: '1980-01-01',
-                    identifier: '18887130'
-                  }
-                ]);
-              }
-            })
-            .catch(err => {
-              console.error('Failed to load FHIR patients:', err);
-              setPatients([
-                {
-                  id: '18887130',
-                  family_name: 'Test Patient',
-                  gender: 'male',
-                  birth_date: '1980-01-01',
-                  identifier: '18887130'
-                }
-              ]);
-            });
+          console.error('❌ No patients found in notes data');
+          setPatients([]);
         }
       })
       .catch(err => {
-        console.error('Failed to load RAG patients:', err);
-        // Fallback to test patient
-        setPatients([
-          {
-            id: '18887130',
-            family_name: 'Test Patient',
-            gender: 'male',
-            birth_date: '1980-01-01',
-            identifier: '18887130'
-          }
-        ]);
+        console.error('❌ Error loading patients from notes API:', err);
+        setPatients([]);
+      })
+      .finally(() => {
+        setLoading(false);
       });
   }, []);
 
@@ -138,46 +112,50 @@ function App() {
     setPmhLoading(true);
     setNotesLoading(true);
     
-    // Load encounters and all resource types in parallel
-    Promise.all([
-      fetch(`${API_BASE}/Encounter?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
-      fetch(`${API_BASE}/Condition?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
-      fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
-      fetch(`${API_BASE}/Observation?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
-      fetch(`${API_BASE}/MedicationRequest?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
-      fetch(`${API_BASE}/Specimen?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
-      fetch(`${API_BASE}/MedicationDispense?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json())
-    ])
-    .then(([encountersRes, conditionsRes, medAdminRes, obsRes, medReqRes, specimenRes, medDispRes]) => {
-      // Process encounters
-      const encounterList = (encountersRes.entry || []).map((e: any) => ({
-        id: e.resource.id,
-        status: e.resource.status,
-        start_date: e.resource.period?.start || '',
-        end_date: e.resource.period?.end || '',
-        class_display: e.resource.class?.display || e.resource.class?.code || '',
-        encounter_type: e.resource.type?.[0]?.coding?.[0]?.display || ''
-      }));
-      
-      setEncounters(encounterList);
-      setSelectedEncounter('all');
-      
-      // Process all resource types
-      setResourceData({
-        conditions: conditionsRes.entry || [],
-        medicationAdministrations: medAdminRes.entry || [],
-        observations: obsRes.entry || [],
-        medicationRequests: medReqRes.entry || [],
-        specimens: specimenRes.entry || [],
-        medicationDispenses: medDispRes.entry || []
+    // Load encounters first
+    fetch(`${API_BASE}/Encounter?patient=Patient/${selectedPatient.id}&_count=100`)
+      .then(r => r.json())
+      .then(encountersRes => {
+        // Process encounters
+        const encounterList = (encountersRes.entry || []).map((e: any) => ({
+          id: e.resource.id,
+          status: e.resource.status,
+          start_date: e.resource.period?.start || '',
+          end_date: e.resource.period?.end || '',
+          class_display: e.resource.class?.display || e.resource.class?.code || '',
+          encounter_type: e.resource.type?.[0]?.coding?.[0]?.display || ''
+        }));
+        
+        setEncounters(encounterList);
+        setSelectedEncounter('all');
+        
+        // Load all patient data (for "All Encounters" view)
+        return Promise.all([
+          fetch(`${API_BASE}/Condition?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
+          fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
+          fetch(`${API_BASE}/Observation?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
+          fetch(`${API_BASE}/MedicationRequest?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
+          fetch(`${API_BASE}/Specimen?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
+          fetch(`${API_BASE}/MedicationDispense?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json())
+        ]);
+      })
+      .then(([conditionsRes, medAdminRes, obsRes, medReqRes, specimenRes, medDispRes]) => {
+        // Process all resource types for "All Encounters" view
+        setResourceData({
+          conditions: conditionsRes.entry || [],
+          medicationAdministrations: medAdminRes.entry || [],
+          observations: obsRes.entry || [],
+          medicationRequests: medReqRes.entry || [],
+          specimens: specimenRes.entry || [],
+          medicationDispenses: medDispRes.entry || []
+        });
+        
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to load patient data:', err);
+        setLoading(false);
       });
-      
-      setLoading(false);
-    })
-    .catch(err => {
-      console.error('Failed to load patient data:', err);
-      setLoading(false);
-    });
 
     // Load allergies separately
     fetch(`${API_BASE}/local/patients/${selectedPatient.id}/allergies`)
@@ -205,8 +183,8 @@ function App() {
         setPmhLoading(false);
       });
 
-    // Load Notes separately
-    fetch(`${API_BASE}/rag/patient/notes?patient_id=${selectedPatient.id}`)
+    // Load Notes separately from Excel file
+    fetch(`${API_BASE}/local/patients/${selectedPatient.id}/notes`)
       .then(res => res.json())
       .then(data => {
         setNotes(data.notes || []);
@@ -219,31 +197,45 @@ function App() {
       });
   }, [selectedPatient]);
 
-  // Filter resources by encounter
-  const getFilteredResources = (resources: any[], resourceType: string) => {
-    if (selectedEncounter === 'all') return resources;
+  // Load encounter-specific data when encounter is selected
+  useEffect(() => {
+    if (!selectedPatient || selectedEncounter === 'all') return;
     
-    return resources.filter(item => {
-      const resource = item.resource;
-      // Different resource types reference encounters differently
-      if (resource.encounter?.reference) {
-        return resource.encounter.reference === `Encounter/${selectedEncounter}`;
-      }
-      if (resource.context?.reference) {
-        return resource.context.reference === `Encounter/${selectedEncounter}`;
-      }
-      // For resources without direct encounter reference, filter by date if encounter has dates
-      const encounter = encounters.find(e => e.id === selectedEncounter);
-      if (encounter && encounter.start_date) {
-        const resourceDate = resource.effectiveDateTime || resource.authoredOn || resource.recordedDate;
-        if (resourceDate) {
-          return resourceDate >= encounter.start_date && 
-                 (!encounter.end_date || resourceDate <= encounter.end_date);
-        }
-      }
-      return false;
+    setLoading(true);
+    
+    const encounter = encounters.find(e => e.id === selectedEncounter);
+    if (!encounter) {
+      setLoading(false);
+      return;
+    }
+    
+    // Make API calls to encounter-specific endpoints
+    Promise.all([
+      fetch(`${API_BASE}/encounter/medications?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json()),
+      fetch(`${API_BASE}/encounter/observations?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json()),
+      fetch(`${API_BASE}/encounter/procedures?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json()),
+      fetch(`${API_BASE}/encounter/specimens?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json())
+    ])
+    .then(([medicationsRes, observationsRes, proceduresRes, specimensRes]) => {
+      // Process encounter-specific data
+      setResourceData({
+        conditions: [], // Conditions are typically not encounter-specific
+        medicationAdministrations: medicationsRes.administrations || [],
+        observations: observationsRes.observations || [],
+        medicationRequests: medicationsRes.requests || [],
+        specimens: specimensRes.specimens || [],
+        medicationDispenses: medicationsRes.dispenses || []
+      });
+      
+      setLoading(false);
+    })
+    .catch(err => {
+      console.error('Failed to load encounter data:', err);
+      setLoading(false);
     });
-  };
+  }, [selectedEncounter, selectedPatient, encounters]);
+
+    // No longer need client-side filtering since we use server-side API calls
 
   // Format different resource types for display
   const formatResource = (item: any, resourceType: string) => {
@@ -423,19 +415,17 @@ function App() {
   const renderResourceTab = (tabName: string, resources: any[], resourceType: string) => {
     if (activeTab !== tabName) return null;
     
-    const filteredResources = getFilteredResources(resources, resourceType);
-    
     if (loading) return <div className="p-4">Loading...</div>;
     
-    if (filteredResources.length === 0) {
+    if (resources.length === 0) {
       return <div className="p-4 text-gray-500">No {tabName} found</div>;
     }
 
-  return (
+    return (
       <div className="p-4">
-        <h3 className="font-semibold mb-3">{tabName} ({filteredResources.length})</h3>
+        <h3 className="font-semibold mb-3">{tabName} ({resources.length})</h3>
         <div className="resource-list">
-          {filteredResources.map((item, idx) => (
+          {resources.map((item: any, idx: number) => (
             <div key={idx} className="mb-3">
               {formatResource(item, resourceType)}
             </div>

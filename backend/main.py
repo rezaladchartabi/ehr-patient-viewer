@@ -23,11 +23,13 @@ try:
     from local_db import LocalDatabase
     from sync_service import SyncService
     from simple_allergy_extractor import SimpleAllergyExtractor
+    from notes_processor import load_notes_data, get_notes_for_patient, get_all_notes, get_unique_patients, get_notes_summary
 except ImportError:
     # When imported as a package (e.g., uvicorn backend.main:app)
     from backend.local_db import LocalDatabase
     from backend.sync_service import SyncService
     from backend.simple_allergy_extractor import SimpleAllergyExtractor
+    from backend.notes_processor import load_notes_data, get_notes_for_patient, get_all_notes, get_unique_patients, get_notes_summary
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -337,6 +339,18 @@ async def _startup_client():
             headers={"User-Agent": "EHR-Proxy/1.0"}
         )
     ensure_search_schema()
+    
+    # Load notes data from Excel file
+    try:
+        logger.info("Loading clinical notes from Excel file...")
+        success = load_notes_data()
+        if success:
+            logger.info("Clinical notes loaded successfully")
+        else:
+            logger.warning("Clinical notes loading failed, continuing without notes")
+    except Exception as e:
+        logger.error(f"Failed to load clinical notes: {e}")
+        logger.info("Continuing without clinical notes")
     
     # Auto-sync database on startup to populate cache and local DB
     auto_sync_enabled = os.getenv("AUTO_SYNC_ON_STARTUP", "true").lower() == "true"
@@ -2376,6 +2390,62 @@ async def get_patient_pmh_by_fhir_id(patient_id: str):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to get patient PMH: {str(e)}")
+
+@app.get("/local/patients/{patient_id}/notes")
+async def get_patient_notes_by_id(patient_id: str):
+    """Get clinical notes for a specific patient from Excel file"""
+    try:
+        notes = get_notes_for_patient(patient_id)
+        return {
+            "patient_id": patient_id,
+            "notes": notes,
+            "count": len(notes)
+        }
+    except Exception as e:
+        logger.error(f"Error fetching notes for patient {patient_id}: {e}")
+        # Return empty notes instead of error
+        return {
+            "patient_id": patient_id,
+            "notes": [],
+            "count": 0
+        }
+
+@app.get("/local/notes")
+async def get_all_notes_endpoint():
+    """Get all clinical notes from Excel file"""
+    try:
+        notes = get_all_notes()
+        summary = get_notes_summary()
+        return {
+            "notes": notes,
+            "summary": summary,
+            "count": len(notes)
+        }
+    except Exception as e:
+        logger.error(f"Error fetching all notes: {e}")
+        # Return empty notes instead of error
+        return {
+            "notes": [],
+            "summary": {"total_notes": 0, "total_patients": 0, "notes_per_patient": 0},
+            "count": 0
+        }
+
+@app.get("/local/notes/patients")
+async def get_notes_patients():
+    """Get list of patients with notes from Excel file"""
+    try:
+        patients = get_unique_patients()
+        return {
+            "patients": patients,
+            "count": len(patients)
+        }
+    except Exception as e:
+        logger.error(f"Error fetching notes patients: {e}")
+        # Return empty list instead of error to prevent frontend crashes
+        return {
+            "patients": [],
+            "count": 0
+        }
 
 @app.post("/pmh/bulk-upload")
 async def bulk_upload_pmh(request: Request):
