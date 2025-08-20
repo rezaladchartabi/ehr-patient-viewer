@@ -17,6 +17,14 @@ from .ollama_nlp_processor import OllamaMedicalNLPProcessor
 from .response_generator import MedicalResponseGenerator
 from data_sources import OpenEvidenceSource, RxNormSource, KnowledgeBase
 
+# Import RAG service
+try:
+    from rag.service import RagService
+    RAG_AVAILABLE = True
+except ImportError:
+    RAG_AVAILABLE = False
+    logging.warning("RAG service not available - clinical context retrieval will be limited")
+
 logger = logging.getLogger(__name__)
 
 class ChatbotService:
@@ -91,6 +99,17 @@ class ChatbotService:
         self.openevidence = OpenEvidenceSource()
         self.rxnorm = RxNormSource()
         
+        # Initialize RAG service for clinical context retrieval
+        if RAG_AVAILABLE:
+            try:
+                self.rag_service = RagService()
+                logger.info("RAG service initialized successfully")
+            except Exception as e:
+                logger.warning(f"Failed to initialize RAG service: {e}")
+                self.rag_service = None
+        else:
+            self.rag_service = None
+        
         # Cache for patient data
         self.patient_cache: Dict[str, Dict] = {}
         
@@ -109,19 +128,23 @@ class ChatbotService:
             # 2. Get patient data
             patient_data = await self._get_patient_data(patient_id)
             
-            # 3. Gather relevant evidence and knowledge
+            # 3. Get relevant clinical context from RAG
+            clinical_context = await self._get_clinical_context(message, patient_id)
+            
+            # 4. Gather relevant evidence and knowledge
             evidence_data = await self._gather_evidence(entities, intent, patient_data)
             
-            # 4. Generate response
+            # 5. Generate response with clinical context
             response = await self.response_generator.generate_response(
                 query=message,
                 intent=intent,
                 entities=entities,
                 patient_data=patient_data,
-                evidence=evidence_data
+                evidence=evidence_data,
+                clinical_context=clinical_context
             )
             
-            # 5. Store in knowledge base for future reference
+            # 6. Store in knowledge base for future reference
             await self._store_conversation_context(
                 conversation_id, patient_id, message, response, entities, intent
             )
@@ -136,7 +159,9 @@ class ChatbotService:
                 "metadata": {
                     "intent": intent,
                     "entities": entities,
-                    "patient_id": patient_id
+                    "patient_id": patient_id,
+                    "clinical_context_count": len(clinical_context.get("hits", [])),
+                    "rag_enabled": self.rag_service is not None and self.rag_service.enabled
                 }
             }
             
@@ -151,6 +176,38 @@ class ChatbotService:
                 "timestamp": datetime.now().isoformat(),
                 "error": str(e)
             }
+    
+    async def _get_clinical_context(self, query: str, patient_id: str) -> Dict[str, Any]:
+        """Get relevant clinical context from RAG system"""
+        if not self.rag_service or not self.rag_service.enabled:
+            logger.info("RAG service not available or disabled")
+            return {"hits": []}
+        
+        try:
+            logger.info(f"Searching RAG for clinical context: {query}")
+            
+            # Search for relevant clinical notes
+            rag_results = self.rag_service.search(
+                query=query,
+                top_k=5,  # Get top 5 most relevant chunks
+                collection="patient"
+            )
+            
+            logger.info(f"RAG returned {len(rag_results.get('hits', []))} relevant clinical chunks")
+            
+            # Format the clinical context for the response generator
+            clinical_context = {
+                "hits": rag_results.get("hits", []),
+                "query": query,
+                "total_hits": len(rag_results.get("hits", [])),
+                "source": "clinical_notes"
+            }
+            
+            return clinical_context
+            
+        except Exception as e:
+            logger.error(f"Error retrieving clinical context from RAG: {e}")
+            return {"hits": [], "error": str(e)}
     
     async def _get_patient_data(self, patient_id: str) -> Dict[str, Any]:
         """Get comprehensive patient data from database and FHIR server"""

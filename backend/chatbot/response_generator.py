@@ -87,25 +87,31 @@ class MedicalResponseGenerator:
         }
     
     async def generate_response(self, query: str, intent: str, entities: List[str], 
-                              patient_data: Dict[str, Any], evidence: Dict[str, Any]) -> Dict[str, Any]:
+                              patient_data: Dict[str, Any], evidence: Dict[str, Any], 
+                              clinical_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Generate a comprehensive response based on the query and available data"""
         try:
             logger.info(f"Generating response for intent: {intent}")
             
             # Generate base response
-            response_text = await self._generate_base_response(intent, entities, patient_data, evidence)
+            response_text = await self._generate_base_response(intent, entities, patient_data, evidence, clinical_context)
             
             # Add evidence citations
             evidence_list = await self._format_evidence(evidence)
+            
+            # Add clinical context if available
+            if clinical_context and clinical_context.get("hits"):
+                clinical_evidence = await self._format_clinical_context(clinical_context)
+                evidence_list.extend(clinical_evidence)
             
             # Add sources
             sources = await self._extract_sources(evidence)
             
             # Calculate confidence
-            confidence = await self._calculate_confidence(intent, entities, patient_data, evidence)
+            confidence = await self._calculate_confidence(intent, entities, patient_data, evidence, clinical_context)
             
             # Add recommendations
-            recommendations = await self._generate_recommendations(intent, entities, patient_data, evidence)
+            recommendations = await self._generate_recommendations(intent, entities, patient_data, evidence, clinical_context)
             
             if recommendations:
                 response_text += f"\n\n💡 Recommendations:\n{recommendations}"
@@ -131,7 +137,8 @@ class MedicalResponseGenerator:
             }
     
     async def _generate_base_response(self, intent: str, entities: List[str], 
-                                    patient_data: Dict[str, Any], evidence: Dict[str, Any]) -> str:
+                                    patient_data: Dict[str, Any], evidence: Dict[str, Any], 
+                                    clinical_context: Optional[Dict[str, Any]] = None) -> str:
         """Generate the base response text"""
         templates = self.response_templates.get(intent, self.response_templates['general_query'])
         
@@ -247,7 +254,15 @@ class MedicalResponseGenerator:
                 return templates['not_found']
         
         else:
-            return templates.get('default', "I can help you with medical information. What would you like to know?")
+            base_response = templates.get('default', "I can help you with medical information. What would you like to know?")
+        
+        # Add clinical context if available
+        if clinical_context and clinical_context.get("hits"):
+            clinical_context_text = self._format_clinical_context_for_response(clinical_context)
+            if clinical_context_text:
+                base_response += f"\n\n📋 **Relevant Clinical Context:**\n{clinical_context_text}"
+        
+        return base_response
     
     async def _format_evidence(self, evidence: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Format evidence for display"""
@@ -277,6 +292,67 @@ class MedicalResponseGenerator:
         
         return formatted_evidence
     
+    async def _format_clinical_context(self, clinical_context: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Format clinical context from RAG for display"""
+        formatted_context = []
+        
+        hits = clinical_context.get("hits", [])
+        for hit in hits:
+            # Extract relevant information from the clinical note chunk
+            text = hit.get("text", "")
+            metadata = hit.get("metadata", {})
+            score = hit.get("score", 0.0)
+            
+            # Create a summary of the clinical context
+            note_id = metadata.get("note_id", "Unknown")
+            section = metadata.get("section", "General")
+            chart_time = metadata.get("chart_time", "")
+            
+            # Truncate text for display (keep first 200 characters)
+            display_text = text[:200] + "..." if len(text) > 200 else text
+            
+            formatted_context.append({
+                "type": "clinical_context",
+                "title": f"Clinical Note: {note_id} - {section}",
+                "abstract": display_text,
+                "journal": f"Discharge Summary - {chart_time}",
+                "evidence_level": "Patient Record",
+                "relevance_score": score,
+                "metadata": {
+                    "note_id": note_id,
+                    "section": section,
+                    "chart_time": chart_time,
+                    "full_text": text
+                }
+            })
+        
+        return formatted_context
+    
+    def _format_clinical_context_for_response(self, clinical_context: Dict[str, Any]) -> str:
+        """Format clinical context for inclusion in the main response text"""
+        hits = clinical_context.get("hits", [])
+        if not hits:
+            return ""
+        
+        context_parts = []
+        
+        # Include top 2 most relevant clinical notes
+        for i, hit in enumerate(hits[:2]):
+            text = hit.get("text", "")
+            metadata = hit.get("metadata", {})
+            score = hit.get("score", 0.0)
+            
+            note_id = metadata.get("note_id", "Unknown")
+            section = metadata.get("section", "General")
+            
+            # Truncate text for readability (keep first 150 characters)
+            display_text = text[:150] + "..." if len(text) > 150 else text
+            
+            # Format as a bullet point
+            context_parts.append(f"• **{note_id} - {section}** (relevance: {score:.2f})\n  {display_text}")
+        
+        return "\n\n".join(context_parts)
+    
     async def _extract_sources(self, evidence: Dict[str, Any]) -> List[str]:
         """Extract source information from evidence"""
         sources = []
@@ -296,7 +372,8 @@ class MedicalResponseGenerator:
         return list(set(sources))
     
     async def _calculate_confidence(self, intent: str, entities: List[str], 
-                                  patient_data: Dict[str, Any], evidence: Dict[str, Any]) -> float:
+                                  patient_data: Dict[str, Any], evidence: Dict[str, Any], 
+                                  clinical_context: Optional[Dict[str, Any]] = None) -> float:
         """Calculate confidence score for the response"""
         confidence = 0.5  # Base confidence
         
@@ -313,6 +390,10 @@ class MedicalResponseGenerator:
         if evidence.get('drug_info'):
             confidence += 0.1
         
+        # Increase confidence if we have relevant clinical context
+        if clinical_context and clinical_context.get("hits"):
+            confidence += 0.15
+        
         # Decrease confidence for complex queries
         if len(entities) > 3:
             confidence -= 0.1
@@ -321,7 +402,8 @@ class MedicalResponseGenerator:
         return min(confidence, 1.0)
     
     async def _generate_recommendations(self, intent: str, entities: List[str], 
-                                      patient_data: Dict[str, Any], evidence: Dict[str, Any]) -> str:
+                                      patient_data: Dict[str, Any], evidence: Dict[str, Any], 
+                                      clinical_context: Optional[Dict[str, Any]] = None) -> str:
         """Generate clinical recommendations"""
         recommendations = []
         
