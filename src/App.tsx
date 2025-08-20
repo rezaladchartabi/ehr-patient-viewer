@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
 import ChatInterface from './components/ChatInterface';
+import ClinicalSearch from './components/ClinicalSearch';
 
 // Types
 interface Patient {
@@ -547,7 +548,8 @@ function App() {
                 { id: 'specimens', label: 'Specimens', count: resourceData.specimens.length },
                 { id: 'medicationDispenses', label: 'Med Dispense', count: resourceData.medicationDispenses.length },
                 { id: 'pmh', label: 'PMH', count: pmh.length },
-                { id: 'notes', label: 'Notes', count: notes.length }
+                { id: 'notes', label: 'Notes', count: notes.length },
+                { id: 'search', label: 'Search', count: 0 }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -645,6 +647,19 @@ function App() {
                   ) : (
                     <div className="text-gray-500">No clinical notes available</div>
                   )}
+                </div>
+              )}
+
+              {/* Search Tab Content */}
+              {activeTab === 'search' && (
+                <div className="p-4">
+                  <ClinicalSearch 
+                    patientId={selectedPatient?.id}
+                    onResultClick={(result) => {
+                      // Handle search result click - could navigate to specific note or resource
+                      console.log('Search result clicked:', result);
+                    }}
+                  />
                 </div>
               )}
 

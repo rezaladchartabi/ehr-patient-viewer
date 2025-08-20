@@ -24,12 +24,14 @@ try:
     from sync_service import SyncService
     from simple_allergy_extractor import SimpleAllergyExtractor
     from notes_processor import load_notes_data, get_notes_for_patient, get_all_notes, get_unique_patients, get_notes_summary, get_notes_for_patient_with_timestamps
+    from clinical_search import clinical_search_service
 except ImportError:
     # When imported as a package (e.g., uvicorn backend.main:app)
     from backend.local_db import LocalDatabase
     from backend.sync_service import SyncService
     from backend.simple_allergy_extractor import SimpleAllergyExtractor
     from backend.notes_processor import load_notes_data, get_notes_for_patient, get_all_notes, get_unique_patients, get_notes_summary, get_notes_for_patient_with_timestamps
+    from backend.clinical_search import clinical_search_service
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -2724,3 +2726,84 @@ async def get_clinical_alerts(patientId: str):
     except Exception as e:
         logger.error(f"Alerts error: {e}")
         raise HTTPException(status_code=500, detail=f"Alerts error: {str(e)}")
+
+# Clinical Search Endpoints
+@app.post("/clinical-search/index")
+async def index_clinical_data(patient_id: Optional[str] = None):
+    """Index clinical notes data for search"""
+    try:
+        clinical_search_service.index_notes_data(patient_id)
+        return {
+            "status": "success",
+            "message": f"Indexed clinical data for {'all patients' if patient_id is None else f'patient {patient_id}'}",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error indexing clinical data: {e}")
+        raise HTTPException(status_code=500, detail=f"Error indexing clinical data: {str(e)}")
+
+@app.get("/clinical-search")
+async def search_clinical_data(
+    q: str,
+    patient_id: Optional[str] = None,
+    resource_types: Optional[str] = None,
+    limit: int = 50
+):
+    """Search across clinical data including notes, medications, and diagnoses"""
+    try:
+        if not q or not q.strip():
+            return {
+                "query": q,
+                "expanded_terms": [],
+                "results": [],
+                "total_count": 0
+            }
+        
+        # Parse resource types if provided
+        resource_types_list = None
+        if resource_types:
+            resource_types_list = [rt.strip() for rt in resource_types.split(',')]
+        
+        results = clinical_search_service.search_clinical_data(
+            query=q.strip(),
+            patient_id=patient_id,
+            resource_types=resource_types_list,
+            limit=limit
+        )
+        
+        return results
+        
+    except Exception as e:
+        logger.error(f"Error in clinical search: {e}")
+        raise HTTPException(status_code=500, detail=f"Error in clinical search: {str(e)}")
+
+@app.get("/clinical-search/suggestions")
+async def get_search_suggestions(q: str, limit: int = 10):
+    """Get search suggestions based on partial query"""
+    try:
+        if not q or len(q.strip()) < 2:
+            return {"suggestions": []}
+        
+        suggestions = clinical_search_service.get_search_suggestions(q.strip(), limit)
+        return {"suggestions": suggestions}
+        
+    except Exception as e:
+        logger.error(f"Error getting search suggestions: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting search suggestions: {str(e)}")
+
+@app.get("/clinical-search/expand")
+async def expand_search_terms(q: str):
+    """Expand search query with clinical synonyms"""
+    try:
+        if not q or not q.strip():
+            return {"original": q, "expanded_terms": []}
+        
+        expanded_terms = clinical_search_service.expand_search_terms(q.strip())
+        return {
+            "original": q,
+            "expanded_terms": expanded_terms
+        }
+        
+    except Exception as e:
+        logger.error(f"Error expanding search terms: {e}")
+        raise HTTPException(status_code=500, detail=f"Error expanding search terms: {str(e)}")
