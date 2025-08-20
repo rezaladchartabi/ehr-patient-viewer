@@ -183,8 +183,8 @@ function App() {
         setPmhLoading(false);
       });
 
-    // Load Notes separately from Excel file
-    fetch(`${API_BASE}/local/patients/${selectedPatient.id}/notes`)
+    // Load Notes separately from Excel file with timestamp information
+    fetch(`${API_BASE}/local/patients/${selectedPatient.id}/notes/with-timestamps`)
       .then(res => res.json())
       .then(data => {
         setNotes(data.notes || []);
@@ -623,15 +623,17 @@ function App() {
                         <div key={index} className="resource-item cursor-pointer hover:bg-gray-50" 
                              onClick={() => setSelectedNote(note)}>
                           <div className="resource-title">
-                            {note.metadata?.note_id || `Note ${index + 1}`}
+                            {note.note_id || `Note ${index + 1}`}
                           </div>
                           <div className="resource-details">
                             <span className="detail-item">
-                              Date: {note.metadata?.chart_time ? 
-                                new Date(note.metadata.chart_time).toLocaleDateString() : 'Unknown'}
+                              Charted: {note.charttime_formatted || 'Unknown'}
                             </span>
                             <span className="detail-item">
-                              Section: {note.metadata?.section || 'General'}
+                              Stored: {note.storetime_formatted || 'Unknown'}
+                            </span>
+                            <span className="detail-item">
+                              Type: {note.note_type || 'General'}
                             </span>
                             <span className="detail-item">
                               Preview: {note.text.substring(0, 100)}...
@@ -652,7 +654,7 @@ function App() {
                   <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
                     <div className="flex justify-between items-center mb-4">
                       <h2 className="text-xl font-semibold">
-                        {selectedNote.metadata?.note_id || 'Clinical Note'}
+                        {selectedNote.note_id || 'Clinical Note'}
                       </h2>
                       <button 
                         onClick={() => setSelectedNote(null)}
@@ -663,11 +665,13 @@ function App() {
                     </div>
                     <div className="mb-4 text-sm text-gray-600">
                       <span className="mr-4">
-                        Date: {selectedNote.metadata?.chart_time ? 
-                          new Date(selectedNote.metadata.chart_time).toLocaleDateString() : 'Unknown'}
+                        Charted: {selectedNote.charttime_formatted || 'Unknown'}
+                      </span>
+                      <span className="mr-4">
+                        Stored: {selectedNote.storetime_formatted || 'Unknown'}
                       </span>
                       <span>
-                        Section: {selectedNote.metadata?.section || 'General'}
+                        Type: {selectedNote.note_type || 'General'}
                       </span>
                     </div>
                     <div className="whitespace-pre-wrap text-sm leading-relaxed">
