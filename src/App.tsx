@@ -54,6 +54,9 @@ function App() {
   const [allergiesLoading, setAllergiesLoading] = useState(false);
   const [pmh, setPmh] = useState<any[]>([]);
   const [pmhLoading, setPmhLoading] = useState(false);
+  const [notes, setNotes] = useState<any[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [selectedNote, setSelectedNote] = useState<any>(null);
   const [showChatbot, setShowChatbot] = useState(false);
 
   // Load patients on mount
@@ -71,6 +74,7 @@ function App() {
     setLoading(true);
     setAllergiesLoading(true);
     setPmhLoading(true);
+    setNotesLoading(true);
     
     // Load encounters and all resource types in parallel
     Promise.all([
@@ -137,6 +141,19 @@ function App() {
         console.error('Failed to load PMH:', err);
         setPmh([]);
         setPmhLoading(false);
+      });
+
+    // Load Notes separately
+    fetch(`${API_BASE}/rag/patient/notes`)
+      .then(res => res.json())
+      .then(data => {
+        setNotes(data.notes || []);
+        setNotesLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to load notes:', err);
+        setNotes([]);
+        setNotesLoading(false);
       });
   }, [selectedPatient]);
 
@@ -477,7 +494,8 @@ function App() {
                 { id: 'medicationRequests', label: 'Med Requests', count: resourceData.medicationRequests.length },
                 { id: 'specimens', label: 'Specimens', count: resourceData.specimens.length },
                 { id: 'medicationDispenses', label: 'Med Dispense', count: resourceData.medicationDispenses.length },
-                { id: 'pmh', label: 'PMH', count: pmh.length }
+                { id: 'pmh', label: 'PMH', count: pmh.length },
+                { id: 'notes', label: 'Notes', count: notes.length }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -538,6 +556,72 @@ function App() {
                   ) : (
                     <div className="text-gray-500">No medical history available</div>
                   )}
+                </div>
+              )}
+
+              {/* Notes Tab Content */}
+              {activeTab === 'notes' && (
+                <div className="p-4">
+                  <h3 className="font-semibold mb-3">Clinical Notes ({notes.length})</h3>
+                  {notesLoading ? (
+                    <div className="text-gray-500">Loading clinical notes...</div>
+                  ) : notes.length > 0 ? (
+                    <div className="space-y-3">
+                      {notes.map((note, index) => (
+                        <div key={index} className="resource-item cursor-pointer hover:bg-gray-50" 
+                             onClick={() => setSelectedNote(note)}>
+                          <div className="resource-title">
+                            {note.metadata?.note_id || `Note ${index + 1}`}
+                          </div>
+                          <div className="resource-details">
+                            <span className="detail-item">
+                              Date: {note.metadata?.chart_time ? 
+                                new Date(note.metadata.chart_time).toLocaleDateString() : 'Unknown'}
+                            </span>
+                            <span className="detail-item">
+                              Section: {note.metadata?.section || 'General'}
+                            </span>
+                            <span className="detail-item">
+                              Preview: {note.text.substring(0, 100)}...
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-gray-500">No clinical notes available</div>
+                  )}
+                </div>
+              )}
+
+              {/* Note Detail Modal */}
+              {selectedNote && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="flex justify-between items-center mb-4">
+                      <h2 className="text-xl font-semibold">
+                        {selectedNote.metadata?.note_id || 'Clinical Note'}
+                      </h2>
+                      <button 
+                        onClick={() => setSelectedNote(null)}
+                        className="text-gray-500 hover:text-gray-700"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div className="mb-4 text-sm text-gray-600">
+                      <span className="mr-4">
+                        Date: {selectedNote.metadata?.chart_time ? 
+                          new Date(selectedNote.metadata.chart_time).toLocaleDateString() : 'Unknown'}
+                      </span>
+                      <span>
+                        Section: {selectedNote.metadata?.section || 'General'}
+                      </span>
+                    </div>
+                    <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                      {selectedNote.text}
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
