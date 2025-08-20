@@ -19,13 +19,13 @@ interface SearchResponse {
 }
 
 interface ClinicalSearchProps {
-  patientId?: string;
   onResultClick?: (result: SearchResult) => void;
+  onPatientSelect?: (patientId: string) => void;
 }
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || 'https://ehr-backend-87r9.onrender.com';
 
-const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ patientId, onResultClick }) => {
+const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onResultClick, onPatientSelect }) => {
   const [query, setQuery] = useState('');
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -66,10 +66,6 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ patientId, onResultClic
         limit: '50'
       });
 
-      if (patientId) {
-        params.append('patient_id', patientId);
-      }
-
       if (resourceType !== 'all') {
         params.append('resource_types', resourceType);
       }
@@ -109,7 +105,7 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ patientId, onResultClic
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [query, patientId, resourceType]);
+  }, [query, resourceType]);
 
   // Handle suggestion click
   const handleSuggestionClick = (suggestion: string) => {
@@ -161,9 +157,9 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ patientId, onResultClic
     <div className="clinical-search">
       {/* Search Header */}
       <div className="mb-4">
-        <h2 className="text-xl font-semibold mb-2">Clinical Search</h2>
+        <h2 className="text-xl font-semibold mb-2">Global Clinical Search</h2>
         <p className="text-sm text-gray-600 mb-4">
-          Search across medications, diagnoses, and clinical notes with intelligent synonym expansion
+          Search across all patients for medications, diagnoses, and clinical notes. Find patients that match your search criteria.
         </p>
       </div>
 
@@ -256,62 +252,97 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ patientId, onResultClic
             </button>
           </div>
 
-          {results.map((result, index) => (
-            <div
-              key={index}
-              onClick={() => handleResultClick(result)}
-              className="p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
-            >
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
-                    {getResourceTypeDisplay(result.resource_type)}
-                  </span>
-                  {result.note_id && (
-                    <span className="text-sm text-gray-500">
-                      {result.note_id}
-                    </span>
-                  )}
+          {/* Group results by patient */}
+          {(() => {
+            const patientGroups = results.reduce((groups, result) => {
+              const patientId = result.patient_id;
+              if (!groups[patientId]) {
+                groups[patientId] = [];
+              }
+              groups[patientId].push(result);
+              return groups;
+            }, {} as { [key: string]: SearchResult[] });
+
+            return Object.entries(patientGroups).map(([patientId, patientResults]) => (
+              <div key={patientId} className="border border-gray-200 rounded-lg overflow-hidden">
+                {/* Patient Header */}
+                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <h4 className="font-semibold text-gray-900">
+                        Patient {patientId}
+                      </h4>
+                      <p className="text-sm text-gray-600">
+                        {patientResults.length} matching result{patientResults.length !== 1 ? 's' : ''}
+                      </p>
+                    </div>
+                    {onPatientSelect && (
+                      <button
+                        onClick={() => onPatientSelect(patientId)}
+                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
+                      >
+                        Select Patient
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <span className="text-sm text-gray-500">
-                  {formatTimestamp(result.timestamp)}
-                </span>
-              </div>
 
-              <div className="mb-2">
-                <p className="text-sm text-gray-600">
-                  Patient: {result.patient_id}
-                </p>
-              </div>
-
-              <div className="prose prose-sm max-w-none">
-                <div
-                  dangerouslySetInnerHTML={{
-                    __html: highlightContent(
-                      result.content.length > 300
-                        ? result.content.substring(0, 300) + '...'
-                        : result.content,
-                      result.matched_terms
-                    )
-                  }}
-                  className="text-sm leading-relaxed"
-                />
-              </div>
-
-              {result.matched_terms.length > 0 && (
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {result.matched_terms.map((term, termIndex) => (
-                    <span
-                      key={termIndex}
-                      className="px-1 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded"
+                {/* Patient Results */}
+                <div className="divide-y divide-gray-100">
+                  {patientResults.map((result, index) => (
+                    <div
+                      key={index}
+                      onClick={() => handleResultClick(result)}
+                      className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
                     >
-                      {term}
-                    </span>
+                      <div className="flex justify-between items-start mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+                            {getResourceTypeDisplay(result.resource_type)}
+                          </span>
+                          {result.note_id && (
+                            <span className="text-sm text-gray-500">
+                              {result.note_id}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-sm text-gray-500">
+                          {formatTimestamp(result.timestamp)}
+                        </span>
+                      </div>
+
+                      <div className="prose prose-sm max-w-none">
+                        <div
+                          dangerouslySetInnerHTML={{
+                            __html: highlightContent(
+                              result.content.length > 300
+                                ? result.content.substring(0, 300) + '...'
+                                : result.content,
+                              result.matched_terms
+                            )
+                          }}
+                          className="text-sm leading-relaxed"
+                        />
+                      </div>
+
+                      {result.matched_terms.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {result.matched_terms.map((term, termIndex) => (
+                            <span
+                              key={termIndex}
+                              className="px-1 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded"
+                            >
+                              {term}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
-              )}
-            </div>
-          ))}
+              </div>
+            ));
+          })()}
         </div>
       )}
 
@@ -328,13 +359,14 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ patientId, onResultClic
       {/* Search Tips */}
       {!query && (
         <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-          <h4 className="font-semibold mb-2">Search Tips:</h4>
+          <h4 className="font-semibold mb-2">Global Search Tips:</h4>
           <ul className="text-sm text-gray-600 space-y-1">
-            <li>• <strong>VTE/DVT/PE:</strong> Automatically expands to include anticoagulants</li>
-            <li>• <strong>Statin:</strong> Finds all statin medications</li>
+            <li>• <strong>VTE/DVT/PE:</strong> Find patients with venous thromboembolism or anticoagulants</li>
+            <li>• <strong>Statin:</strong> Find patients on statin medications</li>
             <li>• <strong>Brand names:</strong> Coumadin, Lovenox, Xarelto, etc.</li>
             <li>• <strong>Abbreviations:</strong> CHF, MI, COPD, DM, HTN</li>
-            <li>• <strong>Full text:</strong> Search within clinical notes</li>
+            <li>• <strong>Full text:</strong> Search within clinical notes across all patients</li>
+            <li>• <strong>Click "Select Patient"</strong> to view that patient's full record</li>
           </ul>
         </div>
       )}

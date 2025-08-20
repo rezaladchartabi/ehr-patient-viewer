@@ -654,10 +654,18 @@ function App() {
               {activeTab === 'search' && (
                 <div className="p-4">
                   <ClinicalSearch 
-                    patientId={selectedPatient?.id}
                     onResultClick={(result) => {
                       // Handle search result click - could navigate to specific note or resource
                       console.log('Search result clicked:', result);
+                    }}
+                    onPatientSelect={(patientId) => {
+                      // Find and select the patient from the search results
+                      const patient = patients.find(p => p.id === patientId);
+                      if (patient) {
+                        setSelectedPatient(patient);
+                        // Switch to a relevant tab (e.g., notes) to show the patient's data
+                        setActiveTab('notes');
+                      }
                     }}
                   />
                 </div>
