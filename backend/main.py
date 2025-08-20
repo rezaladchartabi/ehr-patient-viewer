@@ -2458,11 +2458,67 @@ async def chatbot_message(request: ChatbotMessageRequest):
         if not chatbot_service:
             raise HTTPException(status_code=503, detail="Chatbot service not available")
         
+        # Get the base response from chatbot service
         response = await chatbot_service.process_query(
             message=request.message,
             patient_id=request.patientId,
             conversation_id=request.conversationId
         )
+        
+        # Add RAG clinical context if available
+        try:
+            from rag.service import RagService
+            rag_service = RagService()
+            if rag_service.enabled:
+                # Search for relevant clinical context
+                rag_results = rag_service.search(
+                    query=request.message,
+                    top_k=3,
+                    collection="patient"
+                )
+                
+                if rag_results.get("hits"):
+                    # Add clinical context to the response
+                    clinical_context = {
+                        "hits": rag_results.get("hits", []),
+                        "query": request.message,
+                        "total_hits": len(rag_results.get("hits", [])),
+                        "source": "clinical_notes"
+                    }
+                    
+                    # Add clinical context to evidence
+                    if "evidence" not in response:
+                        response["evidence"] = []
+                    
+                    for hit in clinical_context["hits"][:2]:  # Add top 2 hits
+                        response["evidence"].append({
+                            "type": "clinical_context",
+                            "title": f"Clinical Note: {hit.get('metadata', {}).get('note_id', 'Unknown')}",
+                            "abstract": hit.get("text", "")[:200] + "..." if len(hit.get("text", "")) > 200 else hit.get("text", ""),
+                            "journal": f"Discharge Summary - {hit.get('metadata', {}).get('chart_time', '')}",
+                            "evidence_level": "Patient Record",
+                            "relevance_score": hit.get("score", 0.0)
+                        })
+                    
+                    # Add clinical context to response text
+                    context_text = "\n\n📋 **Relevant Clinical Context:**\n"
+                    for hit in clinical_context["hits"][:2]:
+                        note_id = hit.get('metadata', {}).get('note_id', 'Unknown')
+                        section = hit.get('metadata', {}).get('section', 'General')
+                        text = hit.get("text", "")[:150] + "..." if len(hit.get("text", "")) > 150 else hit.get("text", "")
+                        context_text += f"• **{note_id} - {section}**\n  {text}\n\n"
+                    
+                    response["text"] += context_text
+                    
+                    # Update metadata
+                    if "metadata" not in response:
+                        response["metadata"] = {}
+                    response["metadata"]["clinical_context_count"] = len(clinical_context["hits"])
+                    response["metadata"]["rag_enabled"] = True
+                    
+        except Exception as rag_error:
+            logger.warning(f"RAG integration failed: {rag_error}")
+            # Continue without RAG if it fails
         
         return ChatbotMessageResponse(**response)
         
