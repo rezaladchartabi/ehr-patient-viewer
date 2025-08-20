@@ -212,4 +212,51 @@ class RagService:
             logger.error(f"RAG: Failed to get all notes: {e}")
             return {"notes": [], "error": str(e)}
 
+    def get_notes_by_patient(self, collection: str = "patient", patient_id: str = None, limit: Optional[int] = None) -> Dict[str, Any]:
+        """Get notes for a specific patient, ordered by recency"""
+        if not self.enabled:
+            return {"notes": []}
+        col = self._get_collection(collection)
+        if col is None:
+            return {"notes": []}
+        
+        try:
+            # Use ChromaDB's built-in filtering for better performance
+            where_filter = {"patient_identifier": patient_id}
+            all_results = col.get(where=where_filter)
+            
+            if not all_results.get("ids"):
+                return {"notes": [], "total_count": 0, "patient_id": patient_id}
+            
+            # Combine all data
+            patient_notes = []
+            for i in range(len(all_results["ids"])):
+                note = {
+                    "id": all_results["ids"][i],
+                    "text": all_results["documents"][i],
+                    "metadata": all_results.get("metadatas", [{}])[i] if all_results.get("metadatas") else {},
+                }
+                patient_notes.append(note)
+            
+            # Sort by chart_time (most recent first)
+            def sort_key(note):
+                metadata = note.get("metadata", {})
+                chart_time = metadata.get("chart_time", "")
+                try:
+                    return int(chart_time) if chart_time.isdigit() else 0
+                except (ValueError, TypeError):
+                    return 0
+            
+            patient_notes.sort(key=sort_key, reverse=True)
+            
+            # Apply limit if specified
+            if limit:
+                patient_notes = patient_notes[:limit]
+            
+            return {"notes": patient_notes, "total_count": len(patient_notes), "patient_id": patient_id}
+            
+        except Exception as e:
+            logger.error(f"RAG: Failed to get notes for patient {patient_id}: {e}")
+            return {"notes": [], "error": str(e)}
+
 
