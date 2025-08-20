@@ -33,14 +33,33 @@ function usage() {
   );
 }
 
-async function postBatch(indexUrl, documents, collection) {
-  const res = await fetch(indexUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ documents, collection })
-  });
-  const text = await res.text();
-  return { status: res.status, body: text };
+async function postBatch(indexUrl, documents, collection, retries = 3) {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(indexUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documents, collection })
+      });
+      const text = await res.text();
+      
+      // If we get a 502, wait and retry
+      if (res.status === 502 && attempt < retries) {
+        console.log(`Got 502 on attempt ${attempt}, waiting ${attempt * 2}s before retry...`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+        continue;
+      }
+      
+      return { status: res.status, body: text };
+    } catch (err) {
+      if (attempt < retries) {
+        console.log(`Request failed on attempt ${attempt}, waiting ${attempt * 2}s before retry...`);
+        await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 async function main() {

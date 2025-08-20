@@ -25,6 +25,8 @@
     "rag:chunk": "npm run chunk:notes -- --in backend/discharge_notes.xlsx --out rag_chunks.jsonl",
     "rag:ingest": "node scripts/rag_ingest.js",
     "rag:all": "npm run rag:chunk && npm run rag:ingest",
+    "rag:quick": "./scripts/quick_ingest.sh",
+    "rag:auto": "./scripts/auto_ingest.sh",
     "test:coverage": "react-scripts test --coverage --watchAll=false",
     "test:ci": "react-scripts test --coverage --watchAll=false --ci",
     "eject": "react-scripts eject",
