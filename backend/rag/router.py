@@ -83,4 +83,9 @@ def rag_patient_search(req: PatientSearchRequest):
     filters["patient_identifier"] = req.patientIdentifier
     return service.search(req.query, top_k=req.topK, collection="patient", filters=filters)
 
+@router.get("/patient/notes")
+def rag_get_patient_notes(limit: Optional[int] = None):
+    """Get all patient notes, ordered by recency (most recent first)"""
+    return service.get_all_notes(collection="patient", limit=limit)
+
 

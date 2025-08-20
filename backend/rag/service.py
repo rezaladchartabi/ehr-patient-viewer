@@ -164,4 +164,52 @@ class RagService:
             })
         return {"hits": hits}
 
+    def get_all_notes(self, collection: str = "patient", limit: Optional[int] = None) -> Dict[str, Any]:
+        """Get all notes from the collection, ordered by recency"""
+        if not self.enabled:
+            return {"notes": []}
+        col = self._get_collection(collection)
+        if col is None:
+            return {"notes": []}
+        
+        try:
+            # Get all documents from the collection
+            # Note: ChromaDB doesn't have built-in ordering, so we'll get all and sort in Python
+            all_results = col.get()
+            
+            if not all_results.get("ids"):
+                return {"notes": []}
+            
+            # Combine all data
+            notes = []
+            for i in range(len(all_results["ids"])):
+                note = {
+                    "id": all_results["ids"][i],
+                    "text": all_results["documents"][i],
+                    "metadata": all_results.get("metadatas", [{}])[i] if all_results.get("metadatas") else {},
+                }
+                notes.append(note)
+            
+            # Sort by chart_time (most recent first)
+            def sort_key(note):
+                metadata = note.get("metadata", {})
+                chart_time = metadata.get("chart_time", "")
+                # Convert chart_time to sortable format (assuming format like "101429")
+                try:
+                    return int(chart_time) if chart_time.isdigit() else 0
+                except (ValueError, TypeError):
+                    return 0
+            
+            notes.sort(key=sort_key, reverse=True)
+            
+            # Apply limit if specified
+            if limit:
+                notes = notes[:limit]
+            
+            return {"notes": notes, "total_count": len(notes)}
+            
+        except Exception as e:
+            logger.error(f"RAG: Failed to get all notes: {e}")
+            return {"notes": [], "error": str(e)}
+
 
