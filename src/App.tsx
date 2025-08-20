@@ -61,28 +61,62 @@ function App() {
 
   // Load patients on mount
   useEffect(() => {
-    fetch(`${API_BASE}/local/patients?limit=100&offset=0`)
+    // Load patients from RAG system first, then fallback to FHIR
+    fetch(`${API_BASE}/rag/patient/notes`)
       .then(res => res.json())
       .then(data => {
-        if (data.patients && data.patients.length > 0) {
-          setPatients(data.patients);
+        if (data.notes && data.notes.length > 0) {
+          // Extract unique patient identifiers from RAG data
+          const patientIds = Array.from(new Set(data.notes.map((note: any) => note.metadata?.patient_identifier).filter(Boolean))) as string[];
+          
+          // Create patient objects from the RAG data
+          const ragPatients = patientIds.slice(0, 20).map((patientId: string) => ({
+            id: patientId,
+            family_name: `Patient ${patientId}`,
+            gender: 'unknown',
+            birth_date: '1980-01-01',
+            identifier: patientId
+          }));
+          
+          setPatients(ragPatients);
+          console.log(`Loaded ${ragPatients.length} patients from RAG system`);
         } else {
-          // Fallback to test patients if no patients found
-          console.log('No patients found in database, using test patients');
-          setPatients([
-            {
-              id: '18887130',
-              family_name: 'Test Patient',
-              gender: 'male',
-              birth_date: '1980-01-01',
-              identifier: '18887130'
-            }
-          ]);
+          // Fallback to FHIR server
+          fetch(`${API_BASE}/local/patients?limit=100&offset=0`)
+            .then(res => res.json())
+            .then(fhirData => {
+              if (fhirData.patients && fhirData.patients.length > 0) {
+                setPatients(fhirData.patients);
+              } else {
+                console.log('No patients found, using test patient');
+                setPatients([
+                  {
+                    id: '18887130',
+                    family_name: 'Test Patient',
+                    gender: 'male',
+                    birth_date: '1980-01-01',
+                    identifier: '18887130'
+                  }
+                ]);
+              }
+            })
+            .catch(err => {
+              console.error('Failed to load FHIR patients:', err);
+              setPatients([
+                {
+                  id: '18887130',
+                  family_name: 'Test Patient',
+                  gender: 'male',
+                  birth_date: '1980-01-01',
+                  identifier: '18887130'
+                }
+              ]);
+            });
         }
       })
       .catch(err => {
-        console.error('Failed to load patients:', err);
-        // Fallback to test patients on error
+        console.error('Failed to load RAG patients:', err);
+        // Fallback to test patient
         setPatients([
           {
             id: '18887130',
@@ -172,7 +206,7 @@ function App() {
       });
 
     // Load Notes separately
-    fetch(`${API_BASE}/rag/patient/notes`)
+    fetch(`${API_BASE}/rag/patient/notes?patient_id=${selectedPatient.id}`)
       .then(res => res.json())
       .then(data => {
         setNotes(data.notes || []);
