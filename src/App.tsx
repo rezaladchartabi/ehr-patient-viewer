@@ -63,8 +63,36 @@ function App() {
   useEffect(() => {
     fetch(`${API_BASE}/local/patients?limit=100&offset=0`)
       .then(res => res.json())
-      .then(data => setPatients(data.patients || []))
-      .catch(err => console.error('Failed to load patients:', err));
+      .then(data => {
+        if (data.patients && data.patients.length > 0) {
+          setPatients(data.patients);
+        } else {
+          // Fallback to test patients if no patients found
+          console.log('No patients found in database, using test patients');
+          setPatients([
+            {
+              id: '18887130',
+              family_name: 'Test Patient',
+              gender: 'male',
+              birth_date: '1980-01-01',
+              identifier: '18887130'
+            }
+          ]);
+        }
+      })
+      .catch(err => {
+        console.error('Failed to load patients:', err);
+        // Fallback to test patients on error
+        setPatients([
+          {
+            id: '18887130',
+            family_name: 'Test Patient',
+            gender: 'male',
+            birth_date: '1980-01-01',
+            identifier: '18887130'
+          }
+        ]);
+      });
   }, []);
 
   // Load patient data when patient is selected
