@@ -33,7 +33,7 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ patientId, onResultClic
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [expandedTerms, setExpandedTerms] = useState<string[]>([]);
   const [resourceType, setResourceType] = useState<string>('all');
-  const searchTimeoutRef = useRef<number | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Get search suggestions
   const getSuggestions = async (partialQuery: string) => {
