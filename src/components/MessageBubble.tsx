@@ -75,7 +75,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, patientName }) =
                 onClick={() => setShowEvidence(!showEvidence)}
                 className="text-xs text-blue-600 hover:text-blue-800 font-medium flex items-center space-x-1"
               >
-                <span>{showEvidence ? 'Hide' : 'Show'} Evidence</span>
+                <span>{showEvidence ? 'Hide' : 'Show'} Clinical Context</span>
                 <svg 
                   className={`w-3 h-3 transition-transform ${showEvidence ? 'rotate-180' : ''}`} 
                   fill="none" 
@@ -90,11 +90,18 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, patientName }) =
                 <div className="mt-2 space-y-2">
                   {message.metadata.evidence.map((evidence, index) => (
                     <div key={index} className="bg-white rounded p-2 border border-gray-200">
-                      <div className="text-xs font-medium text-gray-700">
-                        {evidence.title || `Evidence ${index + 1}`}
+                      <div className="flex items-center justify-between">
+                        <div className="text-xs font-medium text-gray-700">
+                          {evidence.title || `Evidence ${index + 1}`}
+                        </div>
+                        {evidence.type === 'clinical_context' && (
+                          <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                            Clinical Note
+                          </span>
+                        )}
                       </div>
                       {evidence.abstract && (
-                        <div className="text-xs text-gray-600 mt-1 line-clamp-2">
+                        <div className="text-xs text-gray-600 mt-1 line-clamp-3">
                           {evidence.abstract}
                         </div>
                       )}
@@ -107,6 +114,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, patientName }) =
                         <span className="inline-block bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full mt-1">
                           {evidence.evidence_level}
                         </span>
+                      )}
+                      {evidence.relevance_score && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          Relevance: {Math.round(evidence.relevance_score * 100)}%
+                        </div>
                       )}
                     </div>
                   ))}
