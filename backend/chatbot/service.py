@@ -19,11 +19,19 @@ from data_sources import OpenEvidenceSource, RxNormSource, KnowledgeBase
 
 # Import RAG service
 try:
+    import sys
+    import os
+    # Add the backend directory to the path to ensure we can import rag
+    backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if backend_dir not in sys.path:
+        sys.path.insert(0, backend_dir)
+    
     from rag.service import RagService
     RAG_AVAILABLE = True
-except ImportError:
+    logger.info("RAG service imported successfully")
+except ImportError as e:
     RAG_AVAILABLE = False
-    logging.warning("RAG service not available - clinical context retrieval will be limited")
+    logger.warning(f"RAG service not available - clinical context retrieval will be limited: {e}")
 
 logger = logging.getLogger(__name__)
 
@@ -179,6 +187,8 @@ class ChatbotService:
     
     async def _get_clinical_context(self, query: str, patient_id: str) -> Dict[str, Any]:
         """Get relevant clinical context from RAG system"""
+        logger.info(f"RAG service status: available={RAG_AVAILABLE}, service={self.rag_service is not None}, enabled={self.rag_service.enabled if self.rag_service else False}")
+        
         if not self.rag_service or not self.rag_service.enabled:
             logger.info("RAG service not available or disabled")
             return {"hits": []}
@@ -207,6 +217,8 @@ class ChatbotService:
             
         except Exception as e:
             logger.error(f"Error retrieving clinical context from RAG: {e}")
+            import traceback
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return {"hits": [], "error": str(e)}
     
     async def _get_patient_data(self, patient_id: str) -> Dict[str, Any]:
