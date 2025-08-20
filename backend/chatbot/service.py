@@ -11,6 +11,9 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 import json
 
+# Set up logger first
+logger = logging.getLogger(__name__)
+
 from .nlp_processor import MedicalNLPProcessor
 from .llm_nlp_processor import LLMMedicalNLPProcessor
 from .ollama_nlp_processor import OllamaMedicalNLPProcessor
@@ -20,7 +23,6 @@ from data_sources import OpenEvidenceSource, RxNormSource, KnowledgeBase
 # Import RAG service
 try:
     import sys
-    import os
     # Add the backend directory to the path to ensure we can import rag
     backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     if backend_dir not in sys.path:
@@ -32,8 +34,6 @@ try:
 except ImportError as e:
     RAG_AVAILABLE = False
     logger.warning(f"RAG service not available - clinical context retrieval will be limited: {e}")
-
-logger = logging.getLogger(__name__)
 
 class ChatbotService:
     """Main chatbot service for medical queries"""
