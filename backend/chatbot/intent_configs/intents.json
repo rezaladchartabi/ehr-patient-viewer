@@ -1,7 +1,7 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "created": "2025-01-16",
-  "last_updated": "2025-01-16",
+  "last_updated": "2025-01-20",
   "description": "Master configuration for all intent types",
   
   "intents": [
@@ -37,49 +37,49 @@
       "intent": "observation_query",
       "description": "Questions about vital signs, lab results, and measurements",
       "config_file": "observation_query.json",
-      "status": "pending",
+      "status": "active",
       "priority": "medium"
     },
     {
       "intent": "encounter_query",
       "description": "Questions about hospital visits, appointments, and encounters",
       "config_file": "encounter_query.json",
-      "status": "pending", 
+      "status": "active", 
       "priority": "medium"
     },
     {
       "intent": "procedure_query",
       "description": "Questions about medical procedures, surgeries, and tests",
       "config_file": "procedure_query.json",
-      "status": "pending",
+      "status": "active",
       "priority": "medium"
     },
     {
       "intent": "specimen_query",
       "description": "Questions about lab samples, specimens, and collections",
       "config_file": "specimen_query.json",
-      "status": "pending",
+      "status": "active",
       "priority": "medium"
     },
     {
       "intent": "interaction_query",
       "description": "Questions about drug interactions and contraindications",
       "config_file": "interaction_query.json",
-      "status": "pending",
+      "status": "active",
       "priority": "low"
     },
     {
       "intent": "evidence_query",
       "description": "Questions about clinical evidence, studies, and guidelines",
       "config_file": "evidence_query.json",
-      "status": "pending",
+      "status": "active",
       "priority": "low"
     },
     {
       "intent": "alert_query",
       "description": "Questions about clinical alerts, warnings, and risks",
       "config_file": "alert_query.json",
-      "status": "pending",
+      "status": "active",
       "priority": "low"
     },
     {
