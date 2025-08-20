@@ -222,7 +222,7 @@ class RagService:
         
         try:
             # Use ChromaDB's built-in filtering for better performance
-            where_filter = {"patient_identifier": patient_id}
+            where_filter = {"patient_identifier": {"$eq": patient_id}}
             all_results = col.get(where=where_filter)
             
             if not all_results.get("ids"):
