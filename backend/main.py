@@ -126,9 +126,7 @@ optimized_cache = OptimizedCache(max_size=2000)
 # Initialize FastAPI app
 app = FastAPI(title="EHR FHIR Proxy", version="1.0.0")
 
-# RAG router mount diagnostics
-rag_router_mounted: bool = False
-rag_router_mount_error: Optional[str] = None
+
 
 # Make imports robust regardless of working directory
 try:
@@ -139,28 +137,7 @@ try:
     if _ROOT not in sys.path:
         sys.path.insert(0, _ROOT)
 except Exception as _e:
-    logger.debug(f"Failed to adjust sys.path for RAG import: {_e}")
-
-try:
-    from backend.rag import router as rag_router  # when running as module
-    app.include_router(rag_router)
-    rag_router_mounted = True
-    logger.info("Mounted RAG router from backend.rag")
-except Exception as e:
-    logger.exception("Failed to mount RAG router from backend.rag")
-    rag_router_mount_error = str(e)
-    try:
-        from rag import router as rag_router  # when running in package root
-        app.include_router(rag_router)
-        rag_router_mounted = True
-        logger.info("Mounted RAG router from rag (package root)")
-    except Exception as e2:
-        logger.exception("Failed to mount RAG router from rag (package root)")
-        rag_router_mount_error = (rag_router_mount_error or "") + (" | " if rag_router_mount_error else "") + str(e2)
-
-if not rag_router_mounted:
-    logger.warning("RAG router not mounted; /rag endpoints will be unavailable")
-
+    pass
 # Add middleware
 app.add_middleware(
     CORSMiddleware,
@@ -299,14 +276,8 @@ async def fetch_from_fhir(path: str, params: Dict = None) -> Dict:
 # Initialize sync service after fetch_from_fhir is defined
 sync_service = SyncService(FHIR_BASE_URL, local_db, fetch_from_fhir)
 
-# Initialize chatbot service
-try:
-    from chatbot import ChatbotService
-    # NLP type can be: "auto", "gpt4", "ollama", or "rule-based"
-    nlp_type = os.getenv("NLP_TYPE", "auto")
-    chatbot_service = ChatbotService(nlp_type=nlp_type)
-except ImportError:
-    chatbot_service = None
+
+
 
 def _cursor_allowed(cursor_url: str) -> bool:
     """Validate cursor URL for security"""
@@ -1156,8 +1127,7 @@ def read_root():
         "fhir_server": FHIR_BASE_URL,
         "cache_ttl": CACHE_TTL,
         "rate_limit": f"{RATE_LIMIT_REQUESTS} requests per {RATE_LIMIT_WINDOW} seconds",
-        "rag_router_mounted": rag_router_mounted,
-        "rag_router_mount_error": rag_router_mount_error
+
     }
 
 @app.get("/Patient")
@@ -2538,194 +2508,11 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={"detail": f"Internal server error: {str(exc)}"}
     )
 
-# Chatbot API Models
-class ChatbotMessageRequest(BaseModel):
-    message: str
-    patientId: str
-    conversationId: str
-    timestamp: str
 
-class ChatbotMessageResponse(BaseModel):
-    response: str
-    evidence: list = []
-    sources: list = []
-    confidence: float = 0.0
-    conversationId: str
-    timestamp: str
 
-# Chatbot Endpoints
-@app.post("/chatbot/message")
-async def chatbot_message(request: ChatbotMessageRequest):
-    """Process a chatbot message and return a response"""
-    try:
-        if not chatbot_service:
-            raise HTTPException(status_code=503, detail="Chatbot service not available")
-        
-        # Get the base response from chatbot service
-        response = await chatbot_service.process_query(
-            message=request.message,
-            patient_id=request.patientId,
-            conversation_id=request.conversationId
-        )
-        
-        # Add RAG clinical context if available
-        try:
-            from rag.service import RagService
-            rag_service = RagService()
-            if rag_service.enabled:
-                # Search for relevant clinical context
-                rag_results = rag_service.search(
-                    query=request.message,
-                    top_k=3,
-                    collection="patient"
-                )
-                
-                if rag_results.get("hits"):
-                    # Add clinical context to the response
-                    clinical_context = {
-                        "hits": rag_results.get("hits", []),
-                        "query": request.message,
-                        "total_hits": len(rag_results.get("hits", [])),
-                        "source": "clinical_notes"
-                    }
-                    
-                    # Add clinical context to evidence
-                    if "evidence" not in response:
-                        response["evidence"] = []
-                    
-                    for hit in clinical_context["hits"][:2]:  # Add top 2 hits
-                        response["evidence"].append({
-                            "type": "clinical_context",
-                            "title": f"Clinical Note: {hit.get('metadata', {}).get('note_id', 'Unknown')}",
-                            "abstract": hit.get("text", "")[:200] + "..." if len(hit.get("text", "")) > 200 else hit.get("text", ""),
-                            "journal": f"Discharge Summary - {hit.get('metadata', {}).get('chart_time', '')}",
-                            "evidence_level": "Patient Record",
-                            "relevance_score": hit.get("score", 0.0)
-                        })
-                    
-                    # Add clinical context to response text
-                    context_text = "\n\n📋 **Relevant Clinical Context:**\n"
-                    for hit in clinical_context["hits"][:2]:
-                        note_id = hit.get('metadata', {}).get('note_id', 'Unknown')
-                        section = hit.get('metadata', {}).get('section', 'General')
-                        text = hit.get("text", "")[:150] + "..." if len(hit.get("text", "")) > 150 else hit.get("text", "")
-                        context_text += f"• **{note_id} - {section}**\n  {text}\n\n"
-                    
-                    response["text"] += context_text
-                    
-                    # Update metadata
-                    if "metadata" not in response:
-                        response["metadata"] = {}
-                    response["metadata"]["clinical_context_count"] = len(clinical_context["hits"])
-                    response["metadata"]["rag_enabled"] = True
-                    
-        except Exception as rag_error:
-            logger.warning(f"RAG integration failed: {rag_error}")
-            # Continue without RAG if it fails
-        
-        return ChatbotMessageResponse(**response)
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Chatbot error: {e}")
-        raise HTTPException(status_code=500, detail=f"Chatbot processing error: {str(e)}")
 
-@app.get("/chatbot/suggestions")
-async def get_suggested_questions(patientId: str):
-    """Get suggested questions for a patient"""
-    try:
-        if not chatbot_service:
-            raise HTTPException(status_code=503, detail="Chatbot service not available")
-        
-        suggestions = await chatbot_service.get_suggested_questions(patientId)
-        return {"suggestions": suggestions}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting suggestions: {e}")
-        raise HTTPException(status_code=500, detail=f"Error getting suggestions: {str(e)}")
 
-@app.get("/chatbot/health")
-async def chatbot_health():
-    """Check chatbot service health"""
-    try:
-        if not chatbot_service:
-            return {
-                "status": "unavailable",
-                "message": "Chatbot service not initialized",
-                "timestamp": datetime.now().isoformat()
-            }
-        
-        health = await chatbot_service.health_check()
-        return health
-        
-    except Exception as e:
-        logger.error(f"Health check error: {e}")
-        return {
-            "status": "unhealthy",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
 
-@app.get("/chatbot/evidence/search")
-async def search_evidence(q: str, filters: dict = None):
-    """Search for clinical evidence"""
-    try:
-        if not chatbot_service:
-            raise HTTPException(status_code=503, detail="Chatbot service not available")
-        
-        evidence = await chatbot_service.openevidence.search_evidence(q, filters)
-        return {"evidence": evidence}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Evidence search error: {e}")
-        raise HTTPException(status_code=500, detail=f"Evidence search error: {str(e)}")
-
-@app.get("/chatbot/drugs/{drug_name}")
-async def get_drug_info(drug_name: str):
-    """Get drug information"""
-    try:
-        if not chatbot_service:
-            raise HTTPException(status_code=503, detail="Chatbot service not available")
-        
-        drug_info = await chatbot_service.rxnorm.search_drugs(drug_name)
-        return {"drug_info": drug_info}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Drug info error: {e}")
-        raise HTTPException(status_code=500, detail=f"Drug info error: {str(e)}")
-
-@app.get("/chatbot/alerts")
-async def get_clinical_alerts(patientId: str):
-    """Get clinical alerts for a patient"""
-    try:
-        if not chatbot_service:
-            raise HTTPException(status_code=503, detail="Chatbot service not available")
-        
-        # This would integrate with your clinical alert system
-        # For now, return mock alerts
-        alerts = [
-            {
-                "type": "medication_interaction",
-                "severity": "moderate",
-                "message": "Potential interaction between medications",
-                "timestamp": datetime.now().isoformat()
-            }
-        ]
-        
-        return {"alerts": alerts}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Alerts error: {e}")
-        raise HTTPException(status_code=500, detail=f"Alerts error: {str(e)}")
 
 # Clinical Search Endpoints
 @app.post("/clinical-search/index")

@@ -18,21 +18,11 @@ RUN apk add --no-cache \
 WORKDIR /app
 
 # Copy requirements first for better layer caching
-COPY backend/requirements-base.txt ./requirements.txt
-COPY backend/requirements-ai.txt ./requirements-ai.txt
+COPY backend/requirements.txt .
 
-# Install base Python dependencies
+# Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir --user -r requirements.txt
-
-# Conditionally install AI dependencies based on build argument
-ARG RAG_ENABLED=false
-RUN if [ "$RAG_ENABLED" = "true" ]; then \
-        echo "Installing AI dependencies..." && \
-        pip install --no-cache-dir --user -r requirements-ai.txt; \
-    else \
-        echo "Skipping AI dependencies (RAG_ENABLED=false)"; \
-    fi
 
 # Stage 2: Runtime stage - minimal image
 FROM python:3.11-alpine AS runtime

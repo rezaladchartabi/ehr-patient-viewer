@@ -42,7 +42,7 @@ class BaseDataSource(ABC):
                 limits=limits,
                 timeout=30.0,
                 headers={
-                    "User-Agent": f"EHR-Chatbot/{self.name}/1.0",
+                    "User-Agent": f"EHR-Proxy/{self.name}/1.0",
                     "Accept": "application/json",
                     "Content-Type": "application/json"
                 }

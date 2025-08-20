@@ -16,7 +16,6 @@ IMAGE_NAME="ehr-backend"
 TAG="latest"
 NO_CACHE=false
 PUSH_IMAGE=false
-RAG_ENABLED=false
 
 # Function to print colored output
 print_status() {
@@ -45,7 +44,7 @@ show_usage() {
     echo "  -g, --tag TAG          Image tag (default: latest)"
     echo "  --no-cache             Build without using cache"
     echo "  --push                 Push image after successful build"
-    echo "  --rag                  Enable AI/RAG dependencies (slower build)"
+
     echo "  -h, --help             Show this help message"
     echo ""
     echo "Examples:"
@@ -78,10 +77,7 @@ while [[ $# -gt 0 ]]; do
             PUSH_IMAGE=true
             shift
             ;;
-        --rag)
-            RAG_ENABLED=true
-            shift
-            ;;
+
         -h|--help)
             show_usage
             exit 0
@@ -123,10 +119,10 @@ if [[ "$NO_CACHE" == "true" ]]; then
     print_warning "Building without cache..."
 fi
 
-BUILD_CMD="$BUILD_CMD -f $DOCKERFILE --build-arg RAG_ENABLED=$RAG_ENABLED -t $IMAGE_NAME:$TAG ."
+BUILD_CMD="$BUILD_CMD -f $DOCKERFILE -t $IMAGE_NAME:$TAG ."
 
 print_status "Build command: $BUILD_CMD"
-print_status "RAG enabled: $RAG_ENABLED"
+
 print_status "Starting build process..."
 
 # Execute build
