@@ -23,13 +23,13 @@ try:
     from local_db import LocalDatabase
     from sync_service import SyncService
     from simple_allergy_extractor import SimpleAllergyExtractor
-    from notes_processor import load_notes_data, get_notes_for_patient, get_all_notes, get_unique_patients, get_notes_summary
+    from notes_processor import load_notes_data, get_notes_for_patient, get_all_notes, get_unique_patients, get_notes_summary, get_notes_for_patient_with_timestamps
 except ImportError:
     # When imported as a package (e.g., uvicorn backend.main:app)
     from backend.local_db import LocalDatabase
     from backend.sync_service import SyncService
     from backend.simple_allergy_extractor import SimpleAllergyExtractor
-    from backend.notes_processor import load_notes_data, get_notes_for_patient, get_all_notes, get_unique_patients, get_notes_summary
+    from backend.notes_processor import load_notes_data, get_notes_for_patient, get_all_notes, get_unique_patients, get_notes_summary, get_notes_for_patient_with_timestamps
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -59,6 +59,12 @@ CONNECTION_TIMEOUT = 30.0
 cache: Dict[str, Dict] = {}
 rate_limit_tracker: Dict[str, List[float]] = defaultdict(list)
 http_client: Optional[httpx.AsyncClient] = None
+
+# Helper function to handle FHIR server errors gracefully
+def handle_fhir_error(endpoint: str, error: Exception) -> Dict:
+    """Return empty FHIR bundle when FHIR server is unavailable"""
+    logger.warning(f"FHIR server error for {endpoint}: {error}")
+    return {"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []}
 
 # Local database and sync service
 local_db = LocalDatabase("local_ehr.db")
@@ -1503,9 +1509,13 @@ async def get_conditions(
     try:
         data = await fetch_from_fhir("/Condition", {k: v for k, v in params.items() if v is not None})
     except HTTPException as e:
-        raise e
+        # Return empty data instead of error when FHIR server is unavailable
+        logger.warning(f"FHIR server error for Condition: {e}")
+        return {"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        # Return empty data instead of error when FHIR server is unavailable
+        logger.warning(f"FHIR server error for Condition: {e}")
+        return {"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []}
     
     # Cache the result
     cache[cache_key] = {
@@ -1549,9 +1559,9 @@ async def get_medication_requests(
                     entry["resource"] = _map_med_req(entry["resource"])
                     
     except HTTPException as e:
-        raise e
+        return handle_fhir_error("MedicationRequest", e)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        return handle_fhir_error("MedicationRequest", e)
     
     # Cache the result
     cache[cache_key] = {
@@ -1592,9 +1602,9 @@ async def get_medication_administrations(
                     entry["resource"] = _map_med_admin(entry["resource"])
                     
     except HTTPException as e:
-        raise e
+        return handle_fhir_error("MedicationAdministration", e)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        return handle_fhir_error("MedicationAdministration", e)
     
     # Cache the result
     cache[cache_key] = {
@@ -1702,9 +1712,9 @@ async def get_observations(
     try:
         data = await fetch_from_fhir("/Observation", {k: v for k, v in params.items() if v is not None})
     except HTTPException as e:
-        raise e
+        return handle_fhir_error("Observation", e)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        return handle_fhir_error("Observation", e)
     
     # Cache the result
     cache[cache_key] = {
@@ -1734,9 +1744,9 @@ async def get_procedures(
     try:
         data = await fetch_from_fhir("/Procedure", {k: v for k, v in params.items() if v is not None})
     except HTTPException as e:
-        raise e
+        return handle_fhir_error("Procedure", e)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        return handle_fhir_error("Procedure", e)
     
     # Cache the result
     cache[cache_key] = {
@@ -2408,6 +2418,27 @@ async def get_patient_notes_by_id(patient_id: str):
             "patient_id": patient_id,
             "notes": [],
             "count": 0
+        }
+
+@app.get("/local/patients/{patient_id}/notes/with-timestamps")
+async def get_patient_notes_with_timestamps(patient_id: str):
+    """Get clinical notes for a specific patient with formatted timestamp information, sorted by recency"""
+    try:
+        notes = get_notes_for_patient_with_timestamps(patient_id)
+        return {
+            "patient_id": patient_id,
+            "notes": notes,
+            "count": len(notes),
+            "sorted_by": "recency (most recent first)"
+        }
+    except Exception as e:
+        logger.error(f"Error fetching notes with timestamps for patient {patient_id}: {e}")
+        # Return empty notes instead of error
+        return {
+            "patient_id": patient_id,
+            "notes": [],
+            "count": 0,
+            "sorted_by": "recency (most recent first)"
         }
 
 @app.get("/local/notes")

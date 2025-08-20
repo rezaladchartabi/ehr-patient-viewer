@@ -95,7 +95,7 @@ class NotesProcessor:
         return self.notes_data or []
     
     def get_patient_notes(self, patient_id: str) -> List[Dict]:
-        """Get notes for a specific patient"""
+        """Get notes for a specific patient, sorted by recency (most recent first)"""
         if self.notes_data is None:
             self.load_notes()
         
@@ -108,6 +108,22 @@ class NotesProcessor:
                 if patient_id in subject_id or subject_id in patient_id:
                     patient_notes = notes
                     break
+        
+        # Sort notes by recency (most recent first)
+        # Use storetime if available, otherwise use charttime
+        def get_sort_key(note):
+            # Prefer storetime over charttime for sorting
+            timestamp = note.get('storetime') or note.get('charttime', '')
+            # Convert to datetime for proper sorting
+            try:
+                from datetime import datetime
+                return datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+            except (ValueError, TypeError):
+                # Fallback to string sorting if datetime parsing fails
+                return timestamp
+        
+        # Sort by recency (most recent first)
+        patient_notes.sort(key=get_sort_key, reverse=True)
         
         return patient_notes
     
@@ -138,6 +154,37 @@ class NotesProcessor:
             "total_patients": total_patients,
             "notes_per_patient": round(avg_notes_per_patient, 2)
         }
+    
+    def get_patient_notes_with_timestamps(self, patient_id: str) -> List[Dict]:
+        """Get notes for a specific patient with formatted timestamp information"""
+        notes = self.get_patient_notes(patient_id)
+        
+        # Add formatted timestamp information to each note
+        for note in notes:
+            # Add formatted timestamps
+            charttime = note.get('charttime', '')
+            storetime = note.get('storetime', '')
+            
+            # Format timestamps for display
+            try:
+                from datetime import datetime
+                if charttime:
+                    chart_dt = datetime.strptime(charttime, '%Y-%m-%d %H:%M:%S')
+                    note['charttime_formatted'] = chart_dt.strftime('%B %d, %Y at %I:%M %p')
+                else:
+                    note['charttime_formatted'] = 'Not available'
+                
+                if storetime:
+                    store_dt = datetime.strptime(storetime, '%Y-%m-%d %H:%M:%S')
+                    note['storetime_formatted'] = store_dt.strftime('%B %d, %Y at %I:%M %p')
+                else:
+                    note['storetime_formatted'] = 'Not available'
+                    
+            except (ValueError, TypeError):
+                note['charttime_formatted'] = charttime or 'Not available'
+                note['storetime_formatted'] = storetime or 'Not available'
+        
+        return notes
 
 # Global instance
 notes_processor = NotesProcessor()
@@ -161,3 +208,7 @@ def get_unique_patients() -> List[str]:
 def get_notes_summary() -> Dict:
     """Get notes summary"""
     return notes_processor.get_notes_summary()
+
+def get_notes_for_patient_with_timestamps(patient_id: str) -> List[Dict]:
+    """Get notes for a specific patient with formatted timestamp information"""
+    return notes_processor.get_patient_notes_with_timestamps(patient_id)

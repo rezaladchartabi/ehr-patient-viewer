@@ -84,8 +84,14 @@ def rag_patient_search(req: PatientSearchRequest):
     return service.search(req.query, top_k=req.topK, collection="patient", filters=filters)
 
 @router.get("/patient/notes")
-def rag_get_patient_notes(limit: Optional[int] = None):
-    """Get all patient notes, ordered by recency (most recent first)"""
-    return service.get_all_notes(collection="patient", limit=limit)
+def rag_get_patient_notes(patient_id: Optional[str] = None, limit: Optional[int] = None):
+    """Get patient notes for a specific patient, ordered by recency (most recent first)"""
+    if patient_id:
+        # Filter by patient_id in metadata
+        filters = {"patient_identifier": patient_id}
+        return service.get_notes_by_patient(collection="patient", patient_id=patient_id, limit=limit)
+    else:
+        # Return all notes if no patient_id specified
+        return service.get_all_notes(collection="patient", limit=limit)
 
 

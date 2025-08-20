@@ -222,8 +222,31 @@ class RagService:
         
         try:
             # Use ChromaDB's built-in filtering for better performance
-            where_filter = {"patient_identifier": {"$eq": patient_id}}
-            all_results = col.get(where=where_filter)
+            # Try different filtering syntax for ChromaDB
+            try:
+                where_filter = {"patient_identifier": {"$eq": patient_id}}
+                all_results = col.get(where=where_filter)
+            except Exception as filter_error:
+                logger.warning(f"ChromaDB filtering failed, falling back to manual filtering: {filter_error}")
+                # Fallback to manual filtering
+                all_results = col.get()
+                # Filter manually
+                filtered_ids = []
+                filtered_docs = []
+                filtered_metadatas = []
+                
+                for i in range(len(all_results.get("ids", []))):
+                    metadata = all_results.get("metadatas", [{}])[i] if all_results.get("metadatas") else {}
+                    if metadata.get("patient_identifier") == patient_id:
+                        filtered_ids.append(all_results["ids"][i])
+                        filtered_docs.append(all_results["documents"][i])
+                        filtered_metadatas.append(metadata)
+                
+                all_results = {
+                    "ids": filtered_ids,
+                    "documents": filtered_docs,
+                    "metadatas": filtered_metadatas
+                }
             
             if not all_results.get("ids"):
                 return {"notes": [], "total_count": 0, "patient_id": patient_id}
