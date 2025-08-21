@@ -424,28 +424,50 @@ function App() {
   };
 
   return (
-    <div className="flex h-screen">
-        {/* Patient List */}
-      <div className={`${showChatbot ? 'w-1/4' : 'w-1/3'} border-r bg-white overflow-y-auto transition-all duration-300`}>
-        <div className="p-4 border-b">
-          <h2 className="font-bold text-lg">Patients ({patients.length})</h2>
-                </div>
-        <div className="divide-y">
-          {patients.map(patient => (
-            <div
-              key={patient.id}
-              className={`p-3 cursor-pointer hover:bg-gray-50 ${
-                selectedPatient?.id === patient.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
-              }`}
-              onClick={() => setSelectedPatient(patient)}
-            >
-              <div className="font-medium">{patient.family_name}</div>
-              <div className="text-sm text-gray-500">
-                {patient.gender} • {patient.birth_date}
-              </div>
-            </div>
-          ))}
+    <div className="flex flex-col h-screen">
+      {/* Global Search Header */}
+      <div className="bg-white border-b border-gray-200 p-4">
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">EHR Patient Viewer</h1>
+          <ClinicalSearch 
+            onResultClick={(result) => {
+              // Handle search result click - could navigate to specific note or resource
+              console.log('Search result clicked:', result);
+            }}
+            onPatientSelect={(patientId) => {
+              // Find and select the patient from the search results
+              const patient = patients.find(p => p.id === patientId);
+              if (patient) {
+                setSelectedPatient(patient);
+              }
+            }}
+          />
         </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Patient List */}
+        <div className={`${showChatbot ? 'w-1/4' : 'w-1/3'} border-r bg-white overflow-y-auto transition-all duration-300`}>
+          <div className="p-4 border-b">
+            <h2 className="font-bold text-lg">Patients ({patients.length})</h2>
+          </div>
+          <div className="divide-y">
+            {patients.map(patient => (
+              <div
+                key={patient.id}
+                className={`p-3 cursor-pointer hover:bg-gray-50 ${
+                  selectedPatient?.id === patient.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                }`}
+                onClick={() => setSelectedPatient(patient)}
+              >
+                <div className="font-medium">{patient.family_name}</div>
+                <div className="text-sm text-gray-500">
+                  {patient.gender} • {patient.birth_date}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Patient Details */}
@@ -535,8 +557,7 @@ function App() {
                 { id: 'specimens', label: 'Specimens', count: resourceData.specimens.length },
                 { id: 'medicationDispenses', label: 'Med Dispense', count: resourceData.medicationDispenses.length },
                 { id: 'pmh', label: 'PMH', count: pmh.length },
-                { id: 'notes', label: 'Notes', count: notes.length },
-                { id: 'search', label: 'Search', count: 0 }
+                { id: 'notes', label: 'Notes', count: notes.length }
               ].map(tab => (
                 <button
                   key={tab.id}
@@ -637,26 +658,7 @@ function App() {
                 </div>
               )}
 
-              {/* Search Tab Content */}
-              {activeTab === 'search' && (
-                <div className="p-4">
-                  <ClinicalSearch 
-                    onResultClick={(result) => {
-                      // Handle search result click - could navigate to specific note or resource
-                      console.log('Search result clicked:', result);
-                    }}
-                    onPatientSelect={(patientId) => {
-                      // Find and select the patient from the search results
-                      const patient = patients.find(p => p.id === patientId);
-                      if (patient) {
-                        setSelectedPatient(patient);
-                        // Switch to a relevant tab (e.g., notes) to show the patient's data
-                        setActiveTab('notes');
-                      }
-                    }}
-                  />
-                </div>
-              )}
+
 
               {/* Note Detail Modal */}
               {selectedNote && (
@@ -695,9 +697,10 @@ function App() {
         ) : (
           <div className="flex-1 flex items-center justify-center text-gray-500">
             Select a patient to view details
-            </div>
-          )}
+          </div>
+        )}
       </div>
+    </div>
 
       {/* Chatbot Panel */}
       {showChatbot && (
