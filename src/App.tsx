@@ -468,8 +468,10 @@ function App() {
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Global Search Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <h1 className="text-3xl font-bold text-white mb-6">EHR Patient Viewer</h1>
+        <div className="w-full px-6 py-8">
+          <h1 className="text-3xl font-bold text-white mb-6">
+            <a href="/" className="hover:underline focus:underline outline-none">EHR Patient Viewer</a>
+          </h1>
           <div className="flex justify-center">
             <div className="w-full max-w-3xl">
               <ClinicalSearch 
