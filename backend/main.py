@@ -2619,6 +2619,108 @@ async def get_notes_summary_endpoint():
         logger.error(f"Error getting notes summary: {e}")
         raise HTTPException(status_code=500, detail=f"Error getting notes summary: {str(e)}")
 
+@app.post("/notes/index/xlsx")
+async def index_notes_from_xlsx(file_path: Optional[str] = None, sheet_name: Optional[str] = None, limit: Optional[int] = None):
+    """Index notes from an on-disk XLSX file (defaults to backend/discharge_notes.xlsx).
+
+    Expected columns:
+    - note_id (str)
+    - subject_id (str)  -> mapped to FHIR Patient.id via patients.identifier
+    - text (str)
+    Optional columns: note_type, charttime, storetime
+    """
+    try:
+        # Resolve XLSX path
+        here = os.path.abspath(os.path.dirname(__file__))
+        xlsx_path = file_path or os.path.join(here, "discharge_notes.xlsx")
+
+        if not os.path.exists(xlsx_path):
+            raise HTTPException(status_code=404, detail=f"XLSX file not found at {xlsx_path}")
+
+        # Build subject_id -> fhir_id map from local DB
+        try:
+            patients = local_db.get_all_patients(limit=100000, offset=0)
+            subject_to_fhir = {p.get("identifier"): p.get("id") for p in patients if p.get("identifier") and p.get("id")}
+        except Exception as map_err:
+            logger.error(f"Failed building subject_to_fhir map: {map_err}")
+            subject_to_fhir = {}
+
+        # Read XLSX
+        import pandas as pd
+        df = pd.read_excel(xlsx_path, sheet_name=sheet_name or 0)
+
+        required_cols = {"note_id", "subject_id", "text"}
+        missing = required_cols - set(c.lower() for c in df.columns)
+        # Normalize columns to lower-case for flexible matching
+        df.columns = [str(c).lower() for c in df.columns]
+        missing = required_cols - set(df.columns)
+        if missing:
+            raise HTTPException(status_code=400, detail=f"XLSX missing required columns: {sorted(list(missing))}")
+
+        success = 0
+        skipped = 0
+        errors: List[str] = []
+
+        for idx, row in df.iterrows():
+            if limit is not None and success >= int(limit):
+                break
+
+            note_id = str(row.get("note_id") or "").strip()
+            subject_id = str(row.get("subject_id") or "").strip()
+            content = str(row.get("text") or "").strip()
+            note_type = str(row.get("note_type") or "").strip() or None
+            # Prefer charttime, fall back to storetime
+            timestamp = None
+            charttime = row.get("charttime")
+            storetime = row.get("storetime")
+            try:
+                # Keep original value if already ISO-like; otherwise cast via pandas
+                if pd.notna(charttime):
+                    timestamp = pd.to_datetime(charttime).isoformat()
+                elif pd.notna(storetime):
+                    timestamp = pd.to_datetime(storetime).isoformat()
+            except Exception:
+                timestamp = None
+
+            if not note_id or not subject_id or not content:
+                skipped += 1
+                continue
+
+            patient_id = subject_to_fhir.get(subject_id)
+            if not patient_id:
+                # Skip if we cannot map subject_id to a local patient
+                skipped += 1
+                continue
+
+            try:
+                ok = notes_processor.index_note(
+                    patient_id=patient_id,
+                    note_id=note_id,
+                    content=content,
+                    note_type=note_type,
+                    timestamp=timestamp,
+                )
+                if ok:
+                    success += 1
+                else:
+                    skipped += 1
+            except Exception as e:
+                errors.append(f"Row {idx}: {e}")
+
+        return {
+            "message": "XLSX notes indexing completed",
+            "file": xlsx_path,
+            "indexed": success,
+            "skipped": skipped,
+            "errors": errors[:10],  # cap errors in response
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error indexing notes from XLSX: {e}")
+        raise HTTPException(status_code=500, detail=f"Error indexing notes from XLSX: {str(e)}")
 @app.post("/notes/index")
 async def index_notes_endpoint(request: Request):
     """Index notes from request data"""

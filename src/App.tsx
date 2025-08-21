@@ -171,8 +171,8 @@ function App() {
         setPmhLoading(false);
       });
 
-    // Load Notes separately from Excel file with timestamp information
-    fetch(`${API_BASE}/local/patients/${selectedPatient.id}/notes/with-timestamps`)
+    // Load Notes from notes processor
+    fetch(`${API_BASE}/notes/patients/${selectedPatient.id}`)
       .then(res => res.json())
       .then(data => {
         setNotes(data.notes || []);
