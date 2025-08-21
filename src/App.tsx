@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-import ChatInterface from './components/ChatInterface';
+// Chat assistant removed from UI
 import ClinicalSearch from './components/ClinicalSearch';
 
 // Types
@@ -58,7 +58,7 @@ function App() {
   const [notes, setNotes] = useState<any[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
   const [selectedNote, setSelectedNote] = useState<any>(null);
-  const [showChatbot, setShowChatbot] = useState(false);
+  // Chat assistant removed
 
   // Load patients on mount
   useEffect(() => {
@@ -498,7 +498,7 @@ function App() {
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Patient List Sidebar */}
-        <div className={`${showChatbot ? 'w-80' : 'w-96'} bg-white shadow-lg border-r border-gray-200 flex flex-col`}>
+        <div className={`w-96 bg-white shadow-lg border-r border-gray-200 flex flex-col`}>
           <div className="p-6 border-b border-gray-200 bg-gray-50">
             <h2 className="text-xl font-semibold text-gray-900 mb-2">Patient Directory</h2>
             <p className="text-sm text-gray-600">Select a patient to view their clinical data</p>
@@ -534,7 +534,7 @@ function App() {
         </div>
 
         {/* Patient Details */}
-        <div className={`${showChatbot ? 'w-1/2' : 'flex-1'} flex flex-col transition-all duration-300`}>
+        <div className={`flex-1 flex flex-col transition-all duration-300`}>
           {selectedPatient ? (
             <>
               {/* Patient Info Header */}
@@ -545,19 +545,7 @@ function App() {
                       <h1 className="text-2xl font-bold text-gray-900 mb-1">{selectedPatient.family_name}</h1>
                       <p className="text-gray-600">Patient ID: {selectedPatient.identifier}</p>
                     </div>
-                    <button
-                      onClick={() => setShowChatbot(!showChatbot)}
-                      className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center space-x-2 ${
-                        showChatbot 
-                          ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-md' 
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                      </svg>
-                      <span>{showChatbot ? 'Hide' : 'Show'} AI Assistant</span>
-                    </button>
+                    {/* Assistant toggle removed */}
                   </div>
                   
                   {/* Patient Demographics */}
@@ -748,11 +736,11 @@ function App() {
                             <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-3">
                               <div>
                                 <span className="text-sm font-medium text-gray-500">Charted</span>
-                                <p className="text-sm text-gray-900">{note.charttime_formatted || 'Unknown'}</p>
+                                <p className="text-sm text-gray-900">{note.charttime_formatted || (note.timestamp ? new Date(note.timestamp).toLocaleString() : 'Unknown')}</p>
                               </div>
                               <div>
                                 <span className="text-sm font-medium text-gray-500">Stored</span>
-                                <p className="text-sm text-gray-900">{note.storetime_formatted || 'Unknown'}</p>
+                                <p className="text-sm text-gray-900">{note.storetime_formatted || (note.timestamp ? new Date(note.timestamp).toLocaleString() : 'Unknown')}</p>
                               </div>
                               <div>
                                 <span className="text-sm font-medium text-gray-500">Type</span>
@@ -762,7 +750,7 @@ function App() {
                             <div className="bg-gray-50 rounded-lg p-3">
                               <span className="text-sm font-medium text-gray-500 block mb-1">Preview</span>
                               <p className="text-sm text-gray-700 line-clamp-2">
-                                {note.text.substring(0, 200)}...
+                                {(note.text || note.content || '').substring(0, 200)}...
                               </p>
                             </div>
                           </div>
@@ -833,16 +821,7 @@ function App() {
       </div>
     </div>
 
-      {/* Chatbot Panel */}
-      {showChatbot && (
-        <div className="w-1/4 border-l border-gray-200 transition-all duration-300">
-          <ChatInterface
-            patientId={selectedPatient?.id}
-            patientName={selectedPatient?.family_name}
-            onClose={() => setShowChatbot(false)}
-          />
-        </div>
-      )}
+      {/* Assistant panel removed */}
     </div>
   );
 }
