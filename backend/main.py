@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-FHIR_BASE_URL = "https://fdfbc9a33dc5.ngrok-free.app/fhir"
+FHIR_BASE_URL = "https://fdfbc9a33dc5.ngrok-free.app/"
 
 # Detect pytest to adjust timings so tests don't bleed into each other
 _IS_TEST_ENV = (
@@ -264,7 +264,7 @@ async def get_http_client():
 async def fetch_from_fhir(path: str, params: Dict = None) -> Dict:
     """Fetch data from FHIR server with optimized connection pooling"""
     async with get_http_client() as client:
-        url = f"{FHIR_BASE_URL}{path}"
+        url = f"{FHIR_BASE_URL}fhir{path}"
         if params:
             query_string = urlencode(params, doseq=True)
             url = f"{url}?{query_string}"
@@ -1294,7 +1294,7 @@ async def get_patients_by_ids(ids: str):
         for i in range(0, len(id_list), batch_size):
             batch = id_list[i:i+batch_size]
             params = {"_id": ",".join(batch), "_count": len(batch)}
-            url = f"{FHIR_BASE_URL}/Patient"
+            url = f"{FHIR_BASE_URL}fhir/Patient"
             resp = await client.get(url, params=params)
             if resp.status_code != 200:
                 raise HTTPException(status_code=resp.status_code, detail=f"FHIR server error: {resp.text}")
@@ -1345,7 +1345,7 @@ async def prefetch_patients(payload: Dict):
         for i in range(0, len(ids), batch_size):
             batch = ids[i:i+batch_size]
             params = {"_id": ",".join(batch), "_count": len(batch)}
-            url = f"{FHIR_BASE_URL}/Patient"
+            url = f"{FHIR_BASE_URL}fhir/Patient"
             resp = await client.get(url, params=params)
             if resp.status_code == 200:
                 bundle = resp.json()
@@ -1362,7 +1362,7 @@ async def prefetch_patients(payload: Dict):
             for path, base_params in resource_types:
                 params = dict(base_params)
                 params["patient"] = f"Patient/{pid}"
-                url = f"{FHIR_BASE_URL}{path}"
+                url = f"{FHIR_BASE_URL}fhir{path}"
                 resp = await client.get(url, params=params)
                 if resp.status_code == 200:
                     bundle = resp.json()
@@ -1430,7 +1430,7 @@ async def verify_encounters(payload: Dict):
     async with httpx.AsyncClient(timeout=30.0) as client:
         for pid in ids:
             try:
-                url = f"{FHIR_BASE_URL}/Encounter"
+                url = f"{FHIR_BASE_URL}fhir/Encounter"
                 params = {"patient": f"Patient/{pid}", "_summary": "count"}
                 resp = await client.get(url, params=params)
                 if resp.status_code == 200:

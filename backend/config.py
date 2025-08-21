@@ -104,7 +104,7 @@ class Config:
                 window_seconds=int(os.getenv("RATE_LIMIT_WINDOW", "60"))
             ),
             fhir=FHIRConfig(
-                base_url=os.getenv("FHIR_BASE_URL", "https://fdfbc9a33dc5.ngrok-free.app/fhir"),
+                base_url=os.getenv("FHIR_BASE_URL", "https://fdfbc9a33dc5.ngrok-free.app/"),
                 timeout=float(os.getenv("FHIR_TIMEOUT", "30.0")),
                 max_retries=int(os.getenv("FHIR_MAX_RETRIES", "3")),
                 retry_delay=float(os.getenv("FHIR_RETRY_DELAY", "5.0"))

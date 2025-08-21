@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class NotesProcessor:
     def __init__(self, db_path: str = "notes_index.db", fhir_base_url: str = None):
         self.db_path = db_path
-        self.fhir_base_url = fhir_base_url or "https://fdfbc9a33dc5.ngrok-free.app/fhir"
+        self.fhir_base_url = fhir_base_url or "https://fdfbc9a33dc5.ngrok-free.app/"
         self._init_db()
     
     def _init_db(self):
@@ -80,14 +80,14 @@ class NotesProcessor:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 # Build FHIR query
                 if patient_id:
-                    url = f"{self.fhir_base_url}/DocumentReference"
+                    url = f"{self.fhir_base_url}fhir/DocumentReference"
                     params = {
                         "patient": patient_id,
                         "type": "clinical-note",
                         "_count": limit
                     }
                 else:
-                    url = f"{self.fhir_base_url}/DocumentReference"
+                    url = f"{self.fhir_base_url}fhir/DocumentReference"
                     params = {
                         "type": "clinical-note",
                         "_count": limit

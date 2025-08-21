@@ -104,7 +104,7 @@ class SyncService:
         if params is None:
             params = {'_count': 1000}  # Get more records per request
         
-        url = f"{self.fhir_base_url}/{resource_type}"
+        url = f"{self.fhir_base_url}fhir/{resource_type}"
         
         for attempt in range(self.max_retries):
             try:
@@ -401,7 +401,7 @@ class SyncService:
                     patient_data = await self.fetch_from_fhir("/Patient", {'_id': patient_id, '_count': 1})
                 else:
                     async with httpx.AsyncClient(timeout=30.0) as client:
-                        url = f"{self.fhir_base_url}/Patient"
+                        url = f"{self.fhir_base_url}fhir/Patient"
                         response = await client.get(url, params={"_id": patient_id, "_count": 1})
                         response.raise_for_status()
                         patient_data = response.json()
@@ -423,7 +423,7 @@ class SyncService:
                         else:
                             # Fallback to direct HTTP call
                             async with httpx.AsyncClient(timeout=30.0) as client:
-                                url = f"{self.fhir_base_url}/{resource_type}?patient=Patient/{patient_id}&_count=100"
+                                url = f"{self.fhir_base_url}fhir/{resource_type}?patient=Patient/{patient_id}&_count=100"
                                 response = await client.get(url)
                                 response.raise_for_status()
                                 resource_data = response.json()
