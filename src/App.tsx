@@ -468,12 +468,12 @@ function App() {
     <div className="flex flex-col h-screen bg-gray-50">
       {/* Global Search Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg">
-        <div className="w-full px-6 py-8">
-          <h1 className="text-3xl font-bold text-white mb-6">
-            <a href="/" className="hover:underline focus:underline outline-none">EHR Patient Viewer</a>
-          </h1>
-          <div className="flex justify-center">
-            <div className="w-full max-w-3xl">
+        <div className="w-full px-6 py-4">
+          <div className="grid grid-cols-3 items-center">
+            <h1 className="text-2xl md:text-3xl font-bold text-white">
+              <a href="/" className="hover:underline focus:underline outline-none">EHR Patient Viewer</a>
+            </h1>
+            <div className="justify-self-center w-full max-w-2xl md:max-w-3xl">
               <ClinicalSearch 
                 onResultClick={(result) => {
                   console.log('Search result clicked:', result);
@@ -486,6 +486,7 @@ function App() {
                 }}
               />
             </div>
+            <div />
           </div>
         </div>
       </div>
