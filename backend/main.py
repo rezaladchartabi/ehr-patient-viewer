@@ -1937,6 +1937,52 @@ async def get_local_patients(limit: int = 25, offset: int = 0):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
+# Legacy compatibility endpoint (deprecated)
+@app.get("/local/notes/patients")
+async def get_legacy_notes_patients():
+    """Compatibility alias for older frontends that read patients from notes.
+    Returns a simple list of patient ids under { "patients": [...] }.
+    """
+    try:
+        patients = local_db.get_all_patients(limit=10000, offset=0)
+        return {"patients": [p.get("id") for p in patients if p.get("id")]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
+@app.get("/ready")
+async def readiness():
+    """Readiness probe for frontend to avoid cold-start races.
+    ready = True when we have patients or notes indexed; otherwise False.
+    """
+    try:
+        try:
+            patient_count = local_db.get_patient_count()
+        except Exception:
+            patient_count = 0
+
+        # Notes summary is best-effort
+        try:
+            notes_summary = notes_processor.get_notes_summary()
+            notes_count = int(notes_summary.get("total_notes", 0))
+        except Exception:
+            notes_count = 0
+
+        ready = (patient_count > 0) or (notes_count > 0)
+
+        return {
+            "ready": ready,
+            "patient_count": patient_count,
+            "notes_count": notes_count,
+            "auto_index_xlsx": os.getenv("AUTO_INDEX_XLSX", "true").lower() == "true",
+            "auto_index_notes": os.getenv("AUTO_INDEX_NOTES", "false").lower() == "true",
+        }
+    except Exception as e:
+        # On error, report not ready with context
+        return {
+            "ready": False,
+            "error": str(e)
+        }
+
 @app.get("/local/patients/{patient_id}")
 async def get_local_patient(patient_id: str):
     """Get a specific patient with allergies from local database"""

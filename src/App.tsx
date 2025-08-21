@@ -60,35 +60,57 @@ function App() {
   const [selectedNote, setSelectedNote] = useState<any>(null);
   // Chat assistant removed
 
-  // Load patients on mount
+  // Load patients on mount with readiness polling and retry/backoff
   useEffect(() => {
-    setLoading(true);
-    
-    // Fetch patients from local database
-    fetch(`${API_BASE}/local/patients?limit=100`)
-      .then(res => {
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
+    let cancelled = false;
+
+    const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+    const fetchWithRetry = async () => {
+      try {
+        setLoading(true);
+
+        // 1) Poll readiness up to 20s
+        const start = Date.now();
+        while (!cancelled && Date.now() - start < 20000) {
+          try {
+            const r = await fetch(`${API_BASE}/ready`);
+            const j = await r.json();
+            if (j.ready) break;
+          } catch {}
+          await sleep(1000);
         }
-        return res.json();
-      })
-      .then(data => {
-        const fetched = Array.isArray(data.patients) ? data.patients : [];
+
+        // 2) Fetch patients with up to 3 retries
+        let attempt = 0;
+        let data: any = null;
+        while (!cancelled && attempt < 3) {
+          attempt += 1;
+          try {
+            const res = await fetch(`${API_BASE}/local/patients?limit=100`);
+            if (!res.ok) throw new Error(`status ${res.status}`);
+            data = await res.json();
+            break;
+          } catch (e) {
+            if (attempt >= 3) throw e;
+            await sleep(500 * attempt);
+          }
+        }
+
+        if (cancelled) return;
+        const fetched = Array.isArray(data?.patients) ? data.patients : [];
         setPatients(fetched);
-        console.log(`✅ Loaded ${fetched.length} patients from local database`);
-        
-        // Auto-select first patient
-        if (fetched.length > 0) {
-          setSelectedPatient(fetched[0]);
-        }
-      })
-      .catch(err => {
+        if (fetched.length > 0) setSelectedPatient(fetched[0]);
+      } catch (err) {
         console.error('❌ Error loading patients:', err);
-        setPatients([]);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+        if (!cancelled) setPatients([]);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    fetchWithRetry();
+    return () => { cancelled = true; };
   }, []);
 
   // Load patient data when patient is selected
