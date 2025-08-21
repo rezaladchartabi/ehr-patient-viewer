@@ -187,9 +187,43 @@ class ClinicalSearchService:
         try:
             results = []
             
-            # For now, use substring search directly since FTS is having issues
-            logger.info(f"Using substring search for terms: {search_terms}")
-            results = self._fallback_substring_search(query, patient_id, resource_types, limit)
+            # Search in clinical data (medications, diagnoses, etc.)
+            clinical_results = self._fallback_substring_search(query, patient_id, resource_types, limit)
+            results.extend(clinical_results)
+            
+            # Search in notes if 'note' is in resource_types or if no specific types requested
+            should_search_notes = (
+                resource_types is None or 
+                'note' in resource_types or 
+                'all' in resource_types
+            )
+            
+            if should_search_notes:
+                try:
+                    # Import notes processor here to avoid circular imports
+                    from notes_processor import notes_processor
+                    notes_results = notes_processor.search_notes(query, patient_id, limit=limit)
+                    
+                    # Convert notes results to clinical search format
+                    for note in notes_results:
+                        results.append({
+                            'patient_id': note['patient_id'],
+                            'resource_type': 'note',
+                            'resource_id': note['note_id'],
+                            'content': note['content'],
+                            'timestamp': note['timestamp'],
+                            'note_id': note['note_id'],
+                            'rank': note.get('relevance_score', 0),
+                            'matched_terms': [query.lower()]
+                        })
+                except Exception as e:
+                    logger.error(f"Error searching notes: {e}")
+            
+            # Sort results by rank/timestamp
+            results.sort(key=lambda x: (x.get('rank', 0), x.get('timestamp', '')), reverse=True)
+            
+            # Limit results
+            results = results[:limit]
             
             return {
                 'query': query,
@@ -284,7 +318,6 @@ class ClinicalSearchService:
         cur = conn.cursor()
         
         try:
-            # Search in medication synonyms
             suggestions = []
             
             # Check medication synonyms
@@ -298,6 +331,30 @@ class ClinicalSearchService:
                 if partial_query.lower() in term.lower():
                     suggestions.append(term)
                     suggestions.extend(synonyms[:3])  # Limit synonyms
+            
+            # Add suggestions from notes content
+            try:
+                from notes_processor import notes_processor
+                notes_results = notes_processor.search_notes(partial_query, limit=5)
+                
+                for note in notes_results:
+                    # Extract potential suggestion terms from note content
+                    content = note['content'].lower()
+                    words = content.split()
+                    
+                    for word in words:
+                        if (partial_query.lower() in word and 
+                            len(word) > len(partial_query) and 
+                            word not in suggestions):
+                            suggestions.append(word)
+                            if len(suggestions) >= limit:
+                                break
+                    
+                    if len(suggestions) >= limit:
+                        break
+                        
+            except Exception as e:
+                logger.error(f"Error getting notes suggestions: {e}")
             
             # Remove duplicates and limit results
             unique_suggestions = list(dict.fromkeys(suggestions))  # Preserve order

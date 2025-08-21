@@ -143,6 +143,18 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onResultClick, onPatien
     return typeMap[type] || type;
   };
 
+  // Get resource type color
+  const getResourceTypeColor = (type: string) => {
+    const colorMap: { [key: string]: string } = {
+      'note': 'bg-blue-100 text-blue-800',
+      'medication-request': 'bg-green-100 text-green-800',
+      'medication-administration': 'bg-purple-100 text-purple-800',
+      'condition': 'bg-orange-100 text-orange-800',
+      'patient': 'bg-gray-100 text-gray-800'
+    };
+    return colorMap[type] || 'bg-gray-100 text-gray-800';
+  };
+
   // Highlight matched terms in content
   const highlightContent = (content: string, matchedTerms: string[]) => {
     let highlightedContent = content;
@@ -297,12 +309,12 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onResultClick, onPatien
                     >
                       <div className="flex justify-between items-start mb-2">
                         <div className="flex items-center gap-2">
-                          <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+                          <span className={`px-2 py-1 text-xs rounded ${getResourceTypeColor(result.resource_type)}`}>
                             {getResourceTypeDisplay(result.resource_type)}
                           </span>
-                          {result.note_id && (
+                          {result.note_id && result.resource_type === 'note' && (
                             <span className="text-sm text-gray-500">
-                              {result.note_id}
+                              Note ID: {result.note_id}
                             </span>
                           )}
                         </div>
@@ -315,13 +327,15 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onResultClick, onPatien
                         <div
                           dangerouslySetInnerHTML={{
                             __html: highlightContent(
-                              result.content.length > 300
-                                ? result.content.substring(0, 300) + '...'
+                              result.content.length > (result.resource_type === 'note' ? 500 : 300)
+                                ? result.content.substring(0, result.resource_type === 'note' ? 500 : 300) + '...'
                                 : result.content,
                               result.matched_terms
                             )
                           }}
-                          className="text-sm leading-relaxed"
+                          className={`text-sm leading-relaxed ${
+                            result.resource_type === 'note' ? 'font-mono bg-gray-50 p-3 rounded' : ''
+                          }`}
                         />
                       </div>
 
