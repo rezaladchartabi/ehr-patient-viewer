@@ -469,29 +469,22 @@ function App() {
       {/* Global Search Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg">
         <div className="max-w-7xl mx-auto px-6 py-8">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-3xl font-bold text-white mb-2">EHR Patient Viewer</h1>
-              <p className="text-blue-100 text-lg">Comprehensive Clinical Data Management</p>
-            </div>
-            <div className="flex items-center space-x-4">
-              <div className="bg-white/10 rounded-lg px-4 py-2">
-                <div className="text-white text-sm font-medium">{patients.length} Patients</div>
-                <div className="text-blue-200 text-xs">Loaded</div>
-              </div>
+          <h1 className="text-3xl font-bold text-white mb-6">EHR Patient Viewer</h1>
+          <div className="flex justify-center">
+            <div className="w-full max-w-3xl">
+              <ClinicalSearch 
+                onResultClick={(result) => {
+                  console.log('Search result clicked:', result);
+                }}
+                onPatientSelect={(patientId) => {
+                  const patient = patients.find(p => p.id === patientId);
+                  if (patient) {
+                    setSelectedPatient(patient);
+                  }
+                }}
+              />
             </div>
           </div>
-          <ClinicalSearch 
-            onResultClick={(result) => {
-              console.log('Search result clicked:', result);
-            }}
-            onPatientSelect={(patientId) => {
-              const patient = patients.find(p => p.id === patientId);
-              if (patient) {
-                setSelectedPatient(patient);
-              }
-            }}
-          />
         </div>
       </div>
 
