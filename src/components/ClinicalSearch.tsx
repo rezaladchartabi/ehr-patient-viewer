@@ -27,35 +27,13 @@ const API_BASE = process.env.REACT_APP_API_BASE_URL || 'https://ehr-backend-87r9
 
 const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onResultClick, onPatientSelect }) => {
   const [query, setQuery] = useState('');
-  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [expandedTerms, setExpandedTerms] = useState<string[]>([]);
-  const [resourceType, setResourceType] = useState<string>('all');
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Get search suggestions
-  const getSuggestions = async (partialQuery: string) => {
-    if (partialQuery.length < 2) {
-      setSuggestions([]);
-      return;
-    }
-
-    try {
-      const response = await fetch(`${API_BASE}/clinical-search/suggestions?q=${encodeURIComponent(partialQuery)}&limit=10`);
-      const data = await response.json();
-      setSuggestions(data.suggestions || []);
-    } catch (error) {
-      console.error('Error getting suggestions:', error);
-    }
-  };
 
   // Perform search
   const performSearch = async (searchQuery: string) => {
     if (!searchQuery.trim()) {
       setResults([]);
-      setExpandedTerms([]);
       return;
     }
 
@@ -66,15 +44,10 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onResultClick, onPatien
         limit: '50'
       });
 
-      if (resourceType !== 'all') {
-        params.append('resource_types', resourceType);
-      }
-
       const response = await fetch(`${API_BASE}/clinical-search?${params}`);
       const data: SearchResponse = await response.json();
       
       setResults(data.results || []);
-      setExpandedTerms(data.expanded_terms || []);
     } catch (error) {
       console.error('Error performing search:', error);
       setResults([]);
@@ -83,36 +56,7 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onResultClick, onPatien
     }
   };
 
-  // Handle query changes with debouncing
-  useEffect(() => {
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
 
-    if (query.trim()) {
-      searchTimeoutRef.current = setTimeout(() => {
-        performSearch(query);
-        getSuggestions(query);
-      }, 300);
-    } else {
-      setResults([]);
-      setSuggestions([]);
-      setExpandedTerms([]);
-    }
-
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
-  }, [query, resourceType]);
-
-  // Handle suggestion click
-  const handleSuggestionClick = (suggestion: string) => {
-    setQuery(suggestion);
-    setShowSuggestions(false);
-    performSearch(suggestion);
-  };
 
   // Handle result click
   const handleResultClick = (result: SearchResult) => {
@@ -167,75 +111,26 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onResultClick, onPatien
 
   return (
     <div className="clinical-search">
-      {/* Search Header */}
-      <div className="mb-4">
-        <h2 className="text-xl font-semibold mb-2">Global Clinical Search</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          Search across all patients for medications, diagnoses, and clinical notes. Find patients that match your search criteria.
-        </p>
+      {/* Simple Search Input */}
+      <div className="flex gap-3">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyPress={(e) => e.key === 'Enter' && performSearch(query)}
+          placeholder="Search medications, diagnoses, notes..."
+          className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+        />
+        <button
+          onClick={() => performSearch(query)}
+          disabled={!query.trim()}
+          className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium transition-colors"
+        >
+          Search
+        </button>
       </div>
 
-      {/* Search Input */}
-      <div className="relative mb-4">
-        <div className="flex gap-2 mb-2">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setShowSuggestions(true);
-            }}
-            onFocus={() => setShowSuggestions(true)}
-            placeholder="Search for medications, diagnoses, or keywords (e.g., VTE, heparin, DVT)..."
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          <select
-            value={resourceType}
-            onChange={(e) => setResourceType(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="all">All Types</option>
-            <option value="note">Clinical Notes</option>
-            <option value="medication-request">Medication Requests</option>
-            <option value="medication-administration">Medication Administration</option>
-            <option value="condition">Conditions</option>
-          </select>
-        </div>
 
-        {/* Search Suggestions */}
-        {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute z-10 w-full bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
-            {suggestions.map((suggestion, index) => (
-              <div
-                key={index}
-                onClick={() => handleSuggestionClick(suggestion)}
-                className="px-4 py-2 hover:bg-gray-100 cursor-pointer border-b border-gray-100 last:border-b-0"
-              >
-                {suggestion}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Expanded Terms */}
-      {expandedTerms.length > 1 && (
-        <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-          <p className="text-sm text-blue-800 mb-2">
-            <strong>Search expanded to include:</strong>
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {expandedTerms.map((term, index) => (
-              <span
-                key={index}
-                className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded"
-              >
-                {term}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Loading State */}
       {loading && (
@@ -247,16 +142,15 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onResultClick, onPatien
 
       {/* Search Results */}
       {!loading && results.length > 0 && (
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-lg font-semibold">
-              Search Results ({results.length})
+        <div className="mt-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-gray-900">
+              Found {results.length} results
             </h3>
             <button
               onClick={() => {
                 setQuery('');
                 setResults([]);
-                setExpandedTerms([]);
               }}
               className="text-sm text-gray-500 hover:text-gray-700"
             >
@@ -264,99 +158,33 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onResultClick, onPatien
             </button>
           </div>
 
-          {/* Group results by patient */}
-          {(() => {
-            const patientGroups = results.reduce((groups, result) => {
-              const patientId = result.patient_id;
-              if (!groups[patientId]) {
-                groups[patientId] = [];
-              }
-              groups[patientId].push(result);
-              return groups;
-            }, {} as { [key: string]: SearchResult[] });
-
-            return Object.entries(patientGroups).map(([patientId, patientResults]) => (
-              <div key={patientId} className="border border-gray-200 rounded-lg overflow-hidden">
-                {/* Patient Header */}
-                <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <h4 className="font-semibold text-gray-900">
-                        Patient {patientId}
-                      </h4>
-                      <p className="text-sm text-gray-600">
-                        {patientResults.length} matching result{patientResults.length !== 1 ? 's' : ''}
-                      </p>
-                    </div>
-                    {onPatientSelect && (
-                      <button
-                        onClick={() => onPatientSelect(patientId)}
-                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors"
-                      >
-                        Select Patient
-                      </button>
-                    )}
+          <div className="space-y-3">
+            {results.map((result, index) => (
+              <div
+                key={index}
+                onClick={() => handleResultClick(result)}
+                className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md cursor-pointer transition-shadow"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`px-2 py-1 text-xs rounded-full font-medium ${getResourceTypeColor(result.resource_type)}`}>
+                      {getResourceTypeDisplay(result.resource_type)}
+                    </span>
+                    <span className="text-sm text-gray-600">Patient {result.patient_id}</span>
                   </div>
+                  <span className="text-sm text-gray-500">
+                    {formatTimestamp(result.timestamp)}
+                  </span>
                 </div>
-
-                {/* Patient Results */}
-                <div className="divide-y divide-gray-100">
-                  {patientResults.map((result, index) => (
-                    <div
-                      key={index}
-                      onClick={() => handleResultClick(result)}
-                      className="p-4 hover:bg-gray-50 cursor-pointer transition-colors"
-                    >
-                      <div className="flex justify-between items-start mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-1 text-xs rounded ${getResourceTypeColor(result.resource_type)}`}>
-                            {getResourceTypeDisplay(result.resource_type)}
-                          </span>
-                          {result.note_id && result.resource_type === 'note' && (
-                            <span className="text-sm text-gray-500">
-                              Note ID: {result.note_id}
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-sm text-gray-500">
-                          {formatTimestamp(result.timestamp)}
-                        </span>
-                      </div>
-
-                      <div className="prose prose-sm max-w-none">
-                        <div
-                          dangerouslySetInnerHTML={{
-                            __html: highlightContent(
-                              result.content.length > (result.resource_type === 'note' ? 500 : 300)
-                                ? result.content.substring(0, result.resource_type === 'note' ? 500 : 300) + '...'
-                                : result.content,
-                              result.matched_terms
-                            )
-                          }}
-                          className={`text-sm leading-relaxed ${
-                            result.resource_type === 'note' ? 'font-mono bg-gray-50 p-3 rounded' : ''
-                          }`}
-                        />
-                      </div>
-
-                      {result.matched_terms.length > 0 && (
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {result.matched_terms.map((term, termIndex) => (
-                            <span
-                              key={termIndex}
-                              className="px-1 py-0.5 bg-yellow-100 text-yellow-800 text-xs rounded"
-                            >
-                              {term}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
+                
+                <div className="text-sm text-gray-700 line-clamp-3">
+                  {result.content.length > 200 
+                    ? result.content.substring(0, 200) + '...' 
+                    : result.content}
                 </div>
               </div>
-            ));
-          })()}
+            ))}
+          </div>
         </div>
       )}
 
