@@ -27,7 +27,7 @@ def run_tests(test_path=None, coverage=True, verbose=False, markers=None):
     setup_test_environment()
     
     # Build pytest command
-    cmd = ["python", "-m", "pytest"]
+    cmd = ["python3", "-m", "pytest"]
     
     if test_path:
         cmd.append(test_path)
@@ -68,7 +68,7 @@ def run_specific_test(test_name):
     setup_test_environment()
     
     cmd = [
-        "python", "-m", "pytest", 
+        "python3", "-m", "pytest", 
         f"test_main_updated.py::{test_name}",
         "-v", "--tb=short"
     ]

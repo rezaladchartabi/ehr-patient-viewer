@@ -9,7 +9,7 @@ import sqlite3
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime
 import logging
-from notes_processor import get_all_notes, get_notes_for_patient
+
 
 logger = logging.getLogger(__name__)
 
@@ -144,59 +144,7 @@ class ClinicalSearchService:
         
         return unique_terms
     
-    def index_notes_data(self, patient_id: Optional[str] = None):
-        """Index clinical notes data for search"""
-        conn = self._get_connection()
-        cur = conn.cursor()
-        
-        try:
-            # Clear existing notes data
-            if patient_id:
-                cur.execute("DELETE FROM clinical_search WHERE patient_id = ? AND resource_type = 'note'", (patient_id,))
-                cur.execute("DELETE FROM clinical_search_fts WHERE patient_id = ? AND resource_type = 'note'", (patient_id,))
-            else:
-                cur.execute("DELETE FROM clinical_search WHERE resource_type = 'note'")
-                cur.execute("DELETE FROM clinical_search_fts WHERE resource_type = 'note'")
-            
-            # Get notes data
-            if patient_id:
-                notes = get_notes_for_patient(patient_id)
-            else:
-                notes = get_all_notes()
-            
-            # Index each note
-            for note in notes:
-                note_patient_id = note.get('subject_id', '')
-                note_id = note.get('note_id', '')
-                note_text = note.get('text', '')
-                charttime = note.get('charttime', '')
-                
-                if note_text:
-                    # Create searchable text (remove common medical abbreviations and normalize)
-                    search_text = self._normalize_text_for_search(note_text)
-                    
-                    # Insert into main table
-                    cur.execute("""
-                        INSERT INTO clinical_search 
-                        (patient_id, resource_type, resource_id, content, search_text, timestamp, note_id)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (note_patient_id, 'note', note_id, note_text, search_text, charttime, note_id))
-                    
-                    # Insert into FTS table
-                    cur.execute("""
-                        INSERT INTO clinical_search_fts 
-                        (content, search_text, patient_id, resource_type)
-                        VALUES (?, ?, ?, ?)
-                    """, (note_text, search_text, note_patient_id, 'note'))
-            
-            conn.commit()
-            logger.info(f"Indexed {len(notes)} notes for search")
-            
-        except Exception as e:
-            logger.error(f"Error indexing notes: {e}")
-            conn.rollback()
-        finally:
-            conn.close()
+
     
     def _normalize_text_for_search(self, text: str) -> str:
         """Normalize text for better search matching"""
