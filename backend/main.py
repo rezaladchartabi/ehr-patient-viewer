@@ -23,15 +23,15 @@ try:
     from local_db import LocalDatabase
     from sync_service import SyncService
     from simple_allergy_extractor import SimpleAllergyExtractor
-
     from clinical_search import clinical_search_service
+    from notes_processor import notes_processor
 except ImportError:
     # When imported as a package (e.g., uvicorn backend.main:app)
     from backend.local_db import LocalDatabase
     from backend.sync_service import SyncService
     from backend.simple_allergy_extractor import SimpleAllergyExtractor
-
     from backend.clinical_search import clinical_search_service
+    from backend.notes_processor import notes_processor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -350,6 +350,9 @@ async def _auto_sync_on_startup():
         # Auto-upload clinical data (allergies and PMH) if they don't exist
         await _auto_upload_clinical_data()
         
+        # Auto-index notes from FHIR if enabled
+        await _auto_index_notes()
+        
     except Exception as e:
         logger.error(f"Startup sync failed: {e}")
 
@@ -392,6 +395,28 @@ async def _auto_upload_clinical_data():
             
     except Exception as e:
         logger.error(f"Auto-upload clinical data failed: {e}")
+
+async def _auto_index_notes():
+    """Automatically index notes from FHIR if enabled"""
+    try:
+        auto_index_notes = os.getenv("AUTO_INDEX_NOTES", "false").lower() == "true"
+        if not auto_index_notes:
+            logger.info("Auto-index notes is disabled")
+            return
+        
+        logger.info("Auto-index notes is enabled, checking notes database...")
+        
+        # Check if notes database is empty
+        summary = notes_processor.get_notes_summary()
+        if summary['total_notes'] == 0:
+            logger.info("Notes database is empty, triggering FHIR notes indexing...")
+            result = await notes_processor.index_notes_from_fhir(limit=100)
+            logger.info(f"Auto-index notes completed: {result['indexed']} notes indexed")
+        else:
+            logger.info(f"Notes database already has {summary['total_notes']} notes, skipping auto-index")
+            
+    except Exception as e:
+        logger.error(f"Auto-index notes failed: {e}")
 
 async def _upload_allergies_data():
     """Upload allergies data from JSON file"""
@@ -2509,3 +2534,212 @@ async def expand_search_terms(q: str):
     except Exception as e:
         logger.error(f"Error expanding search terms: {e}")
         raise HTTPException(status_code=500, detail=f"Error expanding search terms: {str(e)}")
+
+
+# Notes Search Endpoints
+@app.get("/notes/search")
+async def search_notes_endpoint(
+    q: str,
+    patient_id: Optional[str] = None,
+    note_type: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0
+):
+    """Search clinical notes using full-text search"""
+    try:
+        if not q or not q.strip():
+            return {
+                "query": q,
+                "patient_id": patient_id,
+                "results": [],
+                "count": 0
+            }
+        
+        results = notes_processor.search_notes(
+            query=q.strip(),
+            patient_id=patient_id,
+            note_type=note_type,
+            limit=limit,
+            offset=offset
+        )
+        
+        return {
+            "query": q,
+            "patient_id": patient_id,
+            "note_type": note_type,
+            "results": results,
+            "count": len(results),
+            "limit": limit,
+            "offset": offset
+        }
+        
+    except Exception as e:
+        logger.error(f"Error searching notes: {e}")
+        raise HTTPException(status_code=500, detail=f"Error searching notes: {str(e)}")
+
+@app.get("/notes/patients/{patient_id}")
+async def get_patient_notes_endpoint(
+    patient_id: str,
+    limit: int = 100,
+    offset: int = 0
+):
+    """Get all notes for a specific patient"""
+    try:
+        results = notes_processor.get_patient_notes(
+            patient_id=patient_id,
+            limit=limit,
+            offset=offset
+        )
+        
+        return {
+            "patient_id": patient_id,
+            "notes": results,
+            "count": len(results),
+            "limit": limit,
+            "offset": offset
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting patient notes: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting patient notes: {str(e)}")
+
+@app.get("/notes/summary")
+async def get_notes_summary_endpoint():
+    """Get summary statistics about indexed notes"""
+    try:
+        summary = notes_processor.get_notes_summary()
+        db_info = notes_processor.get_database_info()
+        
+        return {
+            "summary": summary,
+            "database_info": db_info
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting notes summary: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting notes summary: {str(e)}")
+
+@app.post("/notes/index")
+async def index_notes_endpoint(request: Request):
+    """Index notes from request data"""
+    try:
+        data = await request.json()
+        notes = data.get('notes', [])
+        
+        if not notes:
+            return {
+                "message": "No notes provided for indexing",
+                "indexed": 0
+            }
+        
+        result = notes_processor.index_notes_batch(notes)
+        
+        return {
+            "message": "Notes indexing completed",
+            "indexed": result["success"],
+            "errors": result["errors"],
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error indexing notes: {e}")
+        raise HTTPException(status_code=500, detail=f"Error indexing notes: {str(e)}")
+
+@app.post("/notes/index/single")
+async def index_single_note_endpoint(request: Request):
+    """Index a single note"""
+    try:
+        data = await request.json()
+        
+        patient_id = data.get('patient_id')
+        note_id = data.get('note_id')
+        content = data.get('content')
+        note_type = data.get('note_type')
+        timestamp = data.get('timestamp')
+        
+        if not all([patient_id, note_id, content]):
+            raise HTTPException(
+                status_code=400, 
+                detail="Missing required fields: patient_id, note_id, content"
+            )
+        
+        success = notes_processor.index_note(
+            patient_id=patient_id,
+            note_id=note_id,
+            content=content,
+            note_type=note_type,
+            timestamp=timestamp
+        )
+        
+        if success:
+            return {
+                "message": "Note indexed successfully",
+                "note_id": note_id,
+                "patient_id": patient_id
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to index note")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error indexing single note: {e}")
+        raise HTTPException(status_code=500, detail=f"Error indexing note: {str(e)}")
+
+@app.delete("/notes/clear")
+async def clear_notes_endpoint(patient_id: Optional[str] = None):
+    """Clear notes from the index"""
+    try:
+        notes_processor.clear_notes(patient_id)
+        
+        message = f"Cleared notes for patient: {patient_id}" if patient_id else "Cleared all notes"
+        
+        return {
+            "message": message,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error clearing notes: {e}")
+        raise HTTPException(status_code=500, detail=f"Error clearing notes: {str(e)}")
+
+@app.post("/notes/index/fhir")
+async def index_notes_from_fhir_endpoint(patient_id: Optional[str] = None, limit: int = 100):
+    """Index notes from FHIR DocumentReference resources"""
+    try:
+        result = await notes_processor.index_notes_from_fhir(patient_id, limit)
+        
+        return {
+            "message": result["message"],
+            "fetched": result["fetched"],
+            "indexed": result["indexed"],
+            "errors": result["errors"],
+            "timestamp": result["timestamp"]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error indexing notes from FHIR: {e}")
+        raise HTTPException(status_code=500, detail=f"Error indexing notes from FHIR: {str(e)}")
+
+@app.get("/notes/fhir/status")
+async def get_fhir_notes_status():
+    """Get status of FHIR notes integration"""
+    try:
+        # Try to fetch a small sample from FHIR to test connectivity
+        sample_notes = await notes_processor.fetch_notes_from_fhir(limit=1)
+        
+        return {
+            "fhir_connected": True,
+            "fhir_base_url": notes_processor.fhir_base_url,
+            "sample_notes_available": len(sample_notes) > 0,
+            "timestamp": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"FHIR connection test failed: {e}")
+        return {
+            "fhir_connected": False,
+            "fhir_base_url": notes_processor.fhir_base_url,
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }
