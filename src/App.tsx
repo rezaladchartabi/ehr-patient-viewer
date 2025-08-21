@@ -232,17 +232,38 @@ function App() {
     switch (resourceType) {
       case 'conditions':
         return (
-          <div className="resource-item">
-            <div className="resource-title">
-              {resource.code?.text || resource.code?.coding?.[0]?.display || 'Unknown Condition'}
-            </div>
-            <div className="resource-details">
-              <span className="detail-item">Status: {resource.clinicalStatus?.coding?.[0]?.code || 'Unknown'}</span>
-              <span className="detail-item">Category: {resource.category?.[0]?.coding?.[0]?.display || 'N/A'}</span>
-              <span className="detail-item">Recorded: {resource.recordedDate || 'N/A'}</span>
-              {resource.code?.coding?.[0]?.code && (
-                <span className="detail-item">Code: {resource.code.coding[0].code}</span>
-              )}
+          <div className="p-4">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <h4 className="text-lg font-semibold text-gray-900 mb-2">
+                  {resource.code?.text || resource.code?.coding?.[0]?.display || 'Unknown Condition'}
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Status</span>
+                    <p className="text-sm text-gray-900">{resource.clinicalStatus?.coding?.[0]?.code || 'Unknown'}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Category</span>
+                    <p className="text-sm text-gray-900">{resource.category?.[0]?.coding?.[0]?.display || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Recorded</span>
+                    <p className="text-sm text-gray-900">{resource.recordedDate || 'N/A'}</p>
+                  </div>
+                  {resource.code?.coding?.[0]?.code && (
+                    <div>
+                      <span className="text-sm font-medium text-gray-500">Code</span>
+                      <p className="text-sm text-gray-900">{resource.code.coding[0].code}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="ml-4">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  Condition
+                </span>
+              </div>
             </div>
           </div>
         );
@@ -403,18 +424,38 @@ function App() {
   const renderResourceTab = (tabName: string, resources: any[], resourceType: string) => {
     if (activeTab !== tabName) return null;
     
-    if (loading) return <div className="p-4">Loading...</div>;
+    if (loading) return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading {tabName.toLowerCase()}...</p>
+        </div>
+      </div>
+    );
     
     if (resources.length === 0) {
-      return <div className="p-4 text-gray-500">No {tabName} found</div>;
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No {tabName} Found</h3>
+            <p className="text-gray-600">No {tabName.toLowerCase()} data available for this patient</p>
+          </div>
+        </div>
+      );
     }
 
     return (
-      <div className="p-4">
-        <h3 className="font-semibold mb-3">{tabName} ({resources.length})</h3>
-        <div className="resource-list">
+      <div className="p-6">
+        <div className="mb-6">
+          <h3 className="text-xl font-semibold text-gray-900">{tabName}</h3>
+          <p className="text-gray-600">{resources.length} items found</p>
+        </div>
+        <div className="space-y-4">
           {resources.map((item: any, idx: number) => (
-            <div key={idx} className="mb-3">
+            <div key={idx} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
               {formatResource(item, resourceType)}
             </div>
           ))}
@@ -424,18 +465,27 @@ function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen">
+    <div className="flex flex-col h-screen bg-gray-50">
       {/* Global Search Header */}
-      <div className="bg-white border-b border-gray-200 p-4">
-        <div className="max-w-4xl mx-auto">
-          <h1 className="text-2xl font-bold text-gray-900 mb-4">EHR Patient Viewer</h1>
+      <div className="bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg">
+        <div className="max-w-7xl mx-auto px-6 py-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-white mb-2">EHR Patient Viewer</h1>
+              <p className="text-blue-100 text-lg">Comprehensive Clinical Data Management</p>
+            </div>
+            <div className="flex items-center space-x-4">
+              <div className="bg-white/10 rounded-lg px-4 py-2">
+                <div className="text-white text-sm font-medium">{patients.length} Patients</div>
+                <div className="text-blue-200 text-xs">Loaded</div>
+              </div>
+            </div>
+          </div>
           <ClinicalSearch 
             onResultClick={(result) => {
-              // Handle search result click - could navigate to specific note or resource
               console.log('Search result clicked:', result);
             }}
             onPatientSelect={(patientId) => {
-              // Find and select the patient from the search results
               const patient = patients.find(p => p.id === patientId);
               if (patient) {
                 setSelectedPatient(patient);
@@ -447,23 +497,36 @@ function App() {
 
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Patient List */}
-        <div className={`${showChatbot ? 'w-1/4' : 'w-1/3'} border-r bg-white overflow-y-auto transition-all duration-300`}>
-          <div className="p-4 border-b">
-            <h2 className="font-bold text-lg">Patients ({patients.length})</h2>
+        {/* Patient List Sidebar */}
+        <div className={`${showChatbot ? 'w-80' : 'w-96'} bg-white shadow-lg border-r border-gray-200 flex flex-col`}>
+          <div className="p-6 border-b border-gray-200 bg-gray-50">
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Patient Directory</h2>
+            <p className="text-sm text-gray-600">Select a patient to view their clinical data</p>
           </div>
-          <div className="divide-y">
+          <div className="flex-1 overflow-y-auto">
             {patients.map(patient => (
               <div
                 key={patient.id}
-                className={`p-3 cursor-pointer hover:bg-gray-50 ${
-                  selectedPatient?.id === patient.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                className={`p-4 cursor-pointer transition-all duration-200 ${
+                  selectedPatient?.id === patient.id 
+                    ? 'bg-blue-50 border-l-4 border-blue-500 shadow-sm' 
+                    : 'hover:bg-gray-50 border-l-4 border-transparent'
                 }`}
                 onClick={() => setSelectedPatient(patient)}
               >
-                <div className="font-medium">{patient.family_name}</div>
-                <div className="text-sm text-gray-500">
-                  {patient.gender} • {patient.birth_date}
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-900 truncate">{patient.family_name}</div>
+                    <div className="text-sm text-gray-500 mt-1">
+                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 mr-2">
+                        {patient.gender}
+                      </span>
+                      {patient.birth_date}
+                    </div>
+                  </div>
+                  {selectedPatient?.id === patient.id && (
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                  )}
                 </div>
               </div>
             ))}
@@ -471,110 +534,143 @@ function App() {
         </div>
 
         {/* Patient Details */}
-      <div className={`${showChatbot ? 'w-1/2' : 'flex-1'} flex flex-col transition-all duration-300`}>
-        {selectedPatient ? (
-          <>
-            {/* Patient Info Header */}
-            <div className="border-b bg-white p-4">
-              <h1 className="text-xl font-bold">{selectedPatient.family_name}</h1>
-              <div className="grid grid-cols-2 gap-4 mt-2 text-sm">
-                <div>Gender: {selectedPatient.gender}</div>
-                <div>Birth Date: {selectedPatient.birth_date}</div>
-                <div>Race: {selectedPatient.race || 'N/A'}</div>
-                <div>Ethnicity: {selectedPatient.ethnicity || 'N/A'}</div>
-                <div>Marital Status: {selectedPatient.marital_status || 'N/A'}</div>
-                <div>Identifier: {selectedPatient.identifier || 'N/A'}</div>
-              </div>
-              
-              {/* Allergies Section */}
-              <div className="mt-4">
-                <h3 className="font-medium text-sm mb-2">Allergies:</h3>
-                {allergiesLoading ? (
-                  <div className="text-sm text-gray-500">Loading allergies...</div>
-                ) : allergies.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {allergies.map((allergy, index) => (
-                      <span 
-                        key={index}
-                        className="inline-block bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full"
-                        title={allergy.note || 'Clinical allergy'}
-                      >
-                        {allergy.allergy_name}
-                      </span>
-                    ))}
+        <div className={`${showChatbot ? 'w-1/2' : 'flex-1'} flex flex-col transition-all duration-300`}>
+          {selectedPatient ? (
+            <>
+              {/* Patient Info Header */}
+              <div className="bg-white shadow-sm border-b border-gray-200">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h1 className="text-2xl font-bold text-gray-900 mb-1">{selectedPatient.family_name}</h1>
+                      <p className="text-gray-600">Patient ID: {selectedPatient.identifier}</p>
+                    </div>
+                    <button
+                      onClick={() => setShowChatbot(!showChatbot)}
+                      className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center space-x-2 ${
+                        showChatbot 
+                          ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-md' 
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                      <span>{showChatbot ? 'Hide' : 'Show'} AI Assistant</span>
+                    </button>
                   </div>
-                ) : (
-                  <div className="text-sm text-gray-500">No known allergies</div>
-                )}
-              </div>
-              
-
-              
-              {/* Encounter Filter */}
-              <div className="mt-4">
-                <label className="block text-sm font-medium mb-1">Filter by Encounter:</label>
-                <select
-                  value={selectedEncounter}
-                  onChange={(e) => setSelectedEncounter(e.target.value)}
-                  className="border rounded px-3 py-1"
-                >
-                  <option value="all">All Encounters</option>
-                  {encounters.map(encounter => (
-                    <option key={encounter.id} value={encounter.id}>
-                      {encounter.class_display} - {encounter.start_date} ({encounter.status})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Chatbot Toggle */}
-              <div className="mt-4">
-                <button
-                  onClick={() => setShowChatbot(!showChatbot)}
-                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                    showChatbot 
-                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                    <span>{showChatbot ? 'Hide' : 'Show'} AI Assistant</span>
+                  
+                  {/* Patient Demographics */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-500">Gender</div>
+                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.gender}</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-500">Birth Date</div>
+                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.birth_date}</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-500">Race</div>
+                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.race || 'N/A'}</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-500">Marital Status</div>
+                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.marital_status || 'N/A'}</div>
+                    </div>
                   </div>
-                </button>
+                  
+                  {/* Allergies Section */}
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Allergies</h3>
+                    {allergiesLoading ? (
+                      <div className="text-gray-500">Loading allergies...</div>
+                    ) : allergies.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {allergies.map((allergy, index) => (
+                          <span 
+                            key={index}
+                            className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800 border border-red-200"
+                            title={allergy.note || 'Clinical allergy'}
+                          >
+                            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                            {allergy.allergy_name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-gray-500 bg-green-50 border border-green-200 rounded-lg p-3">
+                        <div className="flex items-center">
+                          <svg className="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          No known allergies
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Encounter Filter */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Encounter</label>
+                    <select
+                      value={selectedEncounter}
+                      onChange={(e) => setSelectedEncounter(e.target.value)}
+                      className="w-full max-w-md border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="all">All Encounters</option>
+                      {encounters.map(encounter => (
+                        <option key={encounter.id} value={encounter.id}>
+                          {encounter.class_display} - {encounter.start_date} ({encounter.status})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
-            </div>
 
             {/* Resource Tabs */}
-            <div className="flex border-b bg-white">
-              {[
-                { id: 'conditions', label: 'Conditions', count: resourceData.conditions.length },
-                { id: 'medicationAdministrations', label: 'Med Admin', count: resourceData.medicationAdministrations.length },
-                { id: 'observations', label: 'Observations', count: resourceData.observations.length },
-                { id: 'medicationRequests', label: 'Med Requests', count: resourceData.medicationRequests.length },
-                { id: 'specimens', label: 'Specimens', count: resourceData.specimens.length },
-                { id: 'medicationDispenses', label: 'Med Dispense', count: resourceData.medicationDispenses.length },
-                { id: 'pmh', label: 'PMH', count: pmh.length },
-                { id: 'notes', label: 'Notes', count: notes.length }
-              ].map(tab => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`px-4 py-2 text-sm font-medium border-b-2 ${
-                    activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  {tab.label} ({tab.count})
-                </button>
-              ))}
+            <div className="bg-white border-b border-gray-200">
+              <div className="px-6">
+                <div className="flex space-x-8 overflow-x-auto">
+                  {[
+                    { id: 'conditions', label: 'Conditions', count: resourceData.conditions.length, icon: '🩺' },
+                    { id: 'medicationAdministrations', label: 'Med Admin', count: resourceData.medicationAdministrations.length, icon: '💊' },
+                    { id: 'observations', label: 'Observations', count: resourceData.observations.length, icon: '📊' },
+                    { id: 'medicationRequests', label: 'Med Requests', count: resourceData.medicationRequests.length, icon: '📋' },
+                    { id: 'specimens', label: 'Specimens', count: resourceData.specimens.length, icon: '🧪' },
+                    { id: 'medicationDispenses', label: 'Med Dispense', count: resourceData.medicationDispenses.length, icon: '📦' },
+                    { id: 'pmh', label: 'PMH', count: pmh.length, icon: '📋' },
+                    { id: 'notes', label: 'Notes', count: notes.length, icon: '📝' }
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setActiveTab(tab.id)}
+                      className={`flex items-center space-x-2 px-4 py-3 text-sm font-medium border-b-2 transition-all duration-200 whitespace-nowrap ${
+                        activeTab === tab.id
+                          ? 'border-blue-500 text-blue-600 bg-blue-50'
+                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="text-lg">{tab.icon}</span>
+                      <span>{tab.label}</span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        activeTab === tab.id
+                          ? 'bg-blue-100 text-blue-800'
+                          : 'bg-gray-100 text-gray-600'
+                      }`}>
+                        {tab.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Tab Content */}
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-y-auto bg-gray-50">
               {renderResourceTab('conditions', resourceData.conditions, 'conditions')}
               {renderResourceTab('medicationAdministrations', resourceData.medicationAdministrations, 'medicationAdministrations')}
               {renderResourceTab('observations', resourceData.observations, 'observations')}
@@ -623,37 +719,66 @@ function App() {
 
               {/* Notes Tab Content */}
               {activeTab === 'notes' && (
-                <div className="p-4">
-                  <h3 className="font-semibold mb-3">Clinical Notes ({notes.length})</h3>
+                <div className="p-6">
+                  <div className="mb-6">
+                    <h3 className="text-xl font-semibold text-gray-900">Clinical Notes</h3>
+                    <p className="text-gray-600">{notes.length} notes found</p>
+                  </div>
                   {notesLoading ? (
-                    <div className="text-gray-500">Loading clinical notes...</div>
+                    <div className="flex items-center justify-center h-64">
+                      <div className="text-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                        <p className="text-gray-600">Loading clinical notes...</p>
+                      </div>
+                    </div>
                   ) : notes.length > 0 ? (
-                    <div className="space-y-3">
+                    <div className="space-y-4">
                       {notes.map((note, index) => (
-                        <div key={index} className="resource-item cursor-pointer hover:bg-gray-50" 
+                        <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" 
                              onClick={() => setSelectedNote(note)}>
-                          <div className="resource-title">
-                            {note.note_id || `Note ${index + 1}`}
-                          </div>
-                          <div className="resource-details">
-                            <span className="detail-item">
-                              Charted: {note.charttime_formatted || 'Unknown'}
-                            </span>
-                            <span className="detail-item">
-                              Stored: {note.storetime_formatted || 'Unknown'}
-                            </span>
-                            <span className="detail-item">
-                              Type: {note.note_type || 'General'}
-                            </span>
-                            <span className="detail-item">
-                              Preview: {note.text.substring(0, 100)}...
-                            </span>
+                          <div className="p-4">
+                            <div className="flex items-start justify-between mb-3">
+                              <h4 className="text-lg font-semibold text-gray-900">
+                                {note.note_id || `Note ${index + 1}`}
+                              </h4>
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                {note.note_type || 'General'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-3">
+                              <div>
+                                <span className="text-sm font-medium text-gray-500">Charted</span>
+                                <p className="text-sm text-gray-900">{note.charttime_formatted || 'Unknown'}</p>
+                              </div>
+                              <div>
+                                <span className="text-sm font-medium text-gray-500">Stored</span>
+                                <p className="text-sm text-gray-900">{note.storetime_formatted || 'Unknown'}</p>
+                              </div>
+                              <div>
+                                <span className="text-sm font-medium text-gray-500">Type</span>
+                                <p className="text-sm text-gray-900">{note.note_type || 'General'}</p>
+                              </div>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-3">
+                              <span className="text-sm font-medium text-gray-500 block mb-1">Preview</span>
+                              <p className="text-sm text-gray-700 line-clamp-2">
+                                {note.text.substring(0, 200)}...
+                              </p>
+                            </div>
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="text-gray-500">No clinical notes available</div>
+                    <div className="flex items-center justify-center h-64">
+                      <div className="text-center">
+                        <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">No Clinical Notes</h3>
+                        <p className="text-gray-600">No clinical notes available for this patient</p>
+                      </div>
+                    </div>
                   )}
                 </div>
               )}
@@ -695,8 +820,14 @@ function App() {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-gray-500">
-            Select a patient to view details
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 bg-gray-50">
+            <div className="text-center">
+              <svg className="mx-auto h-24 w-24 text-gray-300 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Patient Selected</h3>
+              <p className="text-gray-600">Choose a patient from the directory to view their clinical data</p>
+            </div>
           </div>
         )}
       </div>
