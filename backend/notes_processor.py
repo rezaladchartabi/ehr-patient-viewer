@@ -34,9 +34,19 @@ class NotesProcessor:
                 content TEXT NOT NULL,
                 note_type TEXT,
                 timestamp TEXT,
+                store_time TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Migration: add store_time column if missing
+        try:
+            cur.execute("PRAGMA table_info(notes)")
+            cols = [r[1] for r in cur.fetchall()]
+            if 'store_time' not in cols:
+                cur.execute("ALTER TABLE notes ADD COLUMN store_time TEXT")
+        except Exception:
+            pass
         
         # Create index for faster lookups
         cur.execute("""
@@ -196,7 +206,7 @@ class NotesProcessor:
             }
     
     def index_note(self, patient_id: str, note_id: str, content: str, 
-                   note_type: str = None, timestamp: str = None) -> bool:
+                   note_type: str = None, timestamp: str = None, store_time: str = None) -> bool:
         """Index a single note"""
         if not content or not content.strip():
             logger.warning(f"Skipping empty note: {note_id}")
@@ -209,9 +219,9 @@ class NotesProcessor:
             # Insert into main table
             cur.execute("""
                 INSERT OR REPLACE INTO notes 
-                (patient_id, note_id, content, note_type, timestamp)
-                VALUES (?, ?, ?, ?, ?)
-            """, (patient_id, note_id, content, note_type, timestamp))
+                (patient_id, note_id, content, note_type, timestamp, store_time)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (patient_id, note_id, content, note_type, timestamp, store_time))
             
             # FTS5 automatically updates the virtual table
             conn.commit()
@@ -247,11 +257,12 @@ class NotesProcessor:
                         error_count += 1
                         continue
                     
+                    store_time = note.get('store_time')
                     cur.execute("""
                         INSERT OR REPLACE INTO notes 
-                        (patient_id, note_id, content, note_type, timestamp)
-                        VALUES (?, ?, ?, ?, ?)
-                    """, (patient_id, note_id, content, note_type, timestamp))
+                        (patient_id, note_id, content, note_type, timestamp, store_time)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (patient_id, note_id, content, note_type, timestamp, store_time))
                     
                     success_count += 1
                     

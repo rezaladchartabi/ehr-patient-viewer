@@ -2994,9 +2994,13 @@ async def ingest_all_from_xlsx():
             text = str(row.get("text") or "").strip()
             note_type = str(row.get("note_type") or "").strip() or None
             timestamp = None
+            store_time = None
             charttime = row.get("charttime")
+            storetime = row.get("storetime")
             if pd.notna(charttime):
                 timestamp = pd.to_datetime(charttime).isoformat()
+            if pd.notna(storetime):
+                store_time = pd.to_datetime(storetime).isoformat()
 
             if not note_id or not subject_id or not text:
                 continue
@@ -3006,7 +3010,7 @@ async def ingest_all_from_xlsx():
                 continue
 
             # Index note
-            if notes_processor.index_note(patient_id, note_id, text, note_type, timestamp):
+            if notes_processor.index_note(patient_id, note_id, text, note_type, timestamp, store_time):
                 indexed_notes += 1
 
             # Allergies from note text → upsert into DB
