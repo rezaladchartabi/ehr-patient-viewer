@@ -64,8 +64,8 @@ function App() {
   useEffect(() => {
     setLoading(true);
     
-    // Load real patients from notes Excel file
-    fetch(`${API_BASE}/local/notes/patients`)
+    // Fetch patients from local database
+    fetch(`${API_BASE}/local/patients?limit=100`)
       .then(res => {
         if (!res.ok) {
           throw new Error(`HTTP error! status: ${res.status}`);
@@ -73,30 +73,17 @@ function App() {
         return res.json();
       })
       .then(data => {
-        if (data.patients && data.patients.length > 0) {
-          // Create patient objects from the real notes data
-          const realPatients = data.patients.map((patientId: string) => ({
-            id: patientId,
-            family_name: `Patient ${patientId}`,
-            gender: 'unknown',
-            birth_date: '1980-01-01',
-            identifier: patientId
-          }));
-          
-          setPatients(realPatients);
-          console.log(`✅ Loaded ${realPatients.length} real patients from notes data`);
-          
-          // Auto-select first patient
-          if (realPatients.length > 0) {
-            setSelectedPatient(realPatients[0]);
-          }
-        } else {
-          console.error('❌ No patients found in notes data');
-          setPatients([]);
+        const fetched = Array.isArray(data.patients) ? data.patients : [];
+        setPatients(fetched);
+        console.log(`✅ Loaded ${fetched.length} patients from local database`);
+        
+        // Auto-select first patient
+        if (fetched.length > 0) {
+          setSelectedPatient(fetched[0]);
         }
       })
       .catch(err => {
-        console.error('❌ Error loading patients from notes API:', err);
+        console.error('❌ Error loading patients:', err);
         setPatients([]);
       })
       .finally(() => {
