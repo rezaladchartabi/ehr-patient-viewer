@@ -353,6 +353,12 @@ async def _auto_sync_on_startup():
         # Auto-index notes from FHIR if enabled
         await _auto_index_notes()
         
+        # Auto-index notes from XLSX if database is empty
+        await _auto_index_notes_from_xlsx()
+        
+        # Auto-index notes from XLSX if database is empty
+        await _auto_index_notes_from_xlsx()
+        
     except Exception as e:
         logger.error(f"Startup sync failed: {e}")
 
@@ -417,6 +423,81 @@ async def _auto_index_notes():
             
     except Exception as e:
         logger.error(f"Auto-index notes failed: {e}")
+
+async def _auto_index_notes_from_xlsx():
+    """Automatically index notes from XLSX if database is empty"""
+    try:
+        # Check if notes database is empty
+        summary = notes_processor.get_notes_summary()
+        if summary.get('total_notes', 0) > 0:
+            logger.info(f"Notes database already has {summary['total_notes']} notes, skipping auto-index")
+            return
+        
+        auto_index_xlsx = os.getenv("AUTO_INDEX_XLSX", "true").lower() == "true"
+        if not auto_index_xlsx:
+            logger.info("Auto-index notes from XLSX is disabled")
+            return
+        
+        logger.info("Notes database is empty, auto-indexing from XLSX...")
+        
+        # Build subject_id -> fhir_id map from local DB
+        try:
+            patients = local_db.get_all_patients(limit=100000, offset=0)
+            subject_to_fhir = {p.get("identifier"): p.get("id") for p in patients if p.get("identifier") and p.get("id")}
+            logger.info(f"Mapped {len(subject_to_fhir)} subject IDs to FHIR IDs")
+        except Exception as map_err:
+            logger.error(f"Failed building subject_to_fhir map: {map_err}")
+            subject_to_fhir = {}
+        
+        # Read and index XLSX
+        import pandas as pd
+        here = os.path.abspath(os.path.dirname(__file__))
+        xlsx_path = os.path.join(here, "discharge_notes.xlsx")
+        
+        if not os.path.exists(xlsx_path):
+            logger.warning(f"XLSX file not found at {xlsx_path}")
+            return
+        
+        df = pd.read_excel(xlsx_path, sheet_name=0)
+        required_cols = {"note_id", "subject_id", "text"}
+        df.columns = [str(c).lower() for c in df.columns]
+        missing = required_cols - set(df.columns)
+        
+        if missing:
+            logger.error(f"XLSX missing required columns: {sorted(list(missing))}")
+            return
+        
+        success = 0
+        for idx, row in df.iterrows():
+            note_id = str(row.get("note_id") or "").strip()
+            subject_id = str(row.get("subject_id") or "").strip()
+            content = str(row.get("text") or "").strip()
+            note_type = str(row.get("note_type") or "").strip() or None
+            
+            if not note_id or not subject_id or not content:
+                continue
+            
+            patient_id = subject_to_fhir.get(subject_id)
+            if not patient_id:
+                continue
+            
+            try:
+                ok = notes_processor.index_note(
+                    patient_id=patient_id,
+                    note_id=note_id,
+                    content=content,
+                    note_type=note_type,
+                    timestamp=None,
+                )
+                if ok:
+                    success += 1
+            except Exception as e:
+                logger.error(f"Error indexing note {note_id}: {e}")
+        
+        logger.info(f"Auto-indexed {success} notes from XLSX")
+        
+    except Exception as e:
+        logger.error(f"Auto-index notes from XLSX failed: {e}")
 
 async def _upload_allergies_data():
     """Upload allergies data from JSON file"""

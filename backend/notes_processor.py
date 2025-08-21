@@ -527,4 +527,7 @@ class NotesProcessor:
             }
 
 # Global instance
-notes_processor = NotesProcessor()
+# Use persistent database path that survives deployments
+import os
+NOTES_DB_PATH = os.getenv("NOTES_DB_PATH", "/tmp/notes_index.db")  # Use /tmp for persistence
+notes_processor = NotesProcessor(db_path=NOTES_DB_PATH)
