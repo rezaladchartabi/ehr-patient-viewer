@@ -526,8 +526,8 @@ class NotesProcessor:
                 'error': str(e)
             }
 
-# Global instance
-# Use persistent database path that survives deployments
+# Global instance consolidated into the primary local DB
 import os
-NOTES_DB_PATH = os.getenv("NOTES_DB_PATH", "/tmp/notes_index.db")  # Use /tmp for persistence
-notes_processor = NotesProcessor(db_path=NOTES_DB_PATH)
+_HERE = os.path.abspath(os.path.dirname(__file__))
+_LOCAL_DB_PATH = os.path.join(_HERE, "local_ehr.db")
+notes_processor = NotesProcessor(db_path=_LOCAL_DB_PATH)

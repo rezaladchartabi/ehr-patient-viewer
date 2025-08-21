@@ -2950,6 +2950,96 @@ async def index_notes_from_fhir_endpoint(patient_id: Optional[str] = None, limit
         logger.error(f"Error indexing notes from FHIR: {e}")
         raise HTTPException(status_code=500, detail=f"Error indexing notes from FHIR: {str(e)}")
 
+@app.post("/clinical/ingest/xlsx")
+async def ingest_all_from_xlsx():
+    """Ingest allergies, PMH, and notes from discharge_notes.xlsx into local_ehr.db.
+    - Notes go to consolidated notes table via notes_processor.index_note
+    - Allergies via LocalDatabase.upsert_clinical_allergy
+    - PMH via LocalDatabase.upsert_clinical_pmh
+    """
+    try:
+        import pandas as pd
+        from allergy_processor import AllergyProcessor
+        from pmh_extractor import PMHExtractor
+
+        here = os.path.abspath(os.path.dirname(__file__))
+        xlsx_path = os.path.join(here, "discharge_notes.xlsx")
+        if not os.path.exists(xlsx_path):
+            raise HTTPException(status_code=404, detail="discharge_notes.xlsx not found")
+
+        df = pd.read_excel(xlsx_path, sheet_name=0)
+        df.columns = [str(c).lower() for c in df.columns]
+        required = {"note_id", "subject_id", "text"}
+        missing = required - set(df.columns)
+        if missing:
+            raise HTTPException(status_code=400, detail=f"Missing columns: {sorted(list(missing))}")
+
+        # Map subject->FHIR patient id
+        patients = local_db.get_all_patients(limit=100000, offset=0)
+        subject_to_fhir = {p.get("identifier"): p.get("id") for p in patients if p.get("identifier") and p.get("id")}
+
+        ap = AllergyProcessor()
+        pe = PMHExtractor()
+
+        indexed_notes = 0
+        stored_allergies = 0
+        stored_pmh = 0
+
+        # Build patient grouped notes for PMH extraction
+        patient_notes_for_pmh: Dict[str, List[Dict]] = defaultdict(list)
+
+        for _, row in df.iterrows():
+            note_id = str(row.get("note_id") or "").strip()
+            subject_id = str(row.get("subject_id") or "").strip()
+            text = str(row.get("text") or "").strip()
+            note_type = str(row.get("note_type") or "").strip() or None
+            timestamp = None
+            charttime = row.get("charttime")
+            if pd.notna(charttime):
+                timestamp = pd.to_datetime(charttime).isoformat()
+
+            if not note_id or not subject_id or not text:
+                continue
+
+            patient_id = subject_to_fhir.get(subject_id)
+            if not patient_id:
+                continue
+
+            # Index note
+            if notes_processor.index_note(patient_id, note_id, text, note_type, timestamp):
+                indexed_notes += 1
+
+            # Allergies from note text → upsert into DB
+            for allergy_name in ap.extract_allergies_from_text(text):
+                if local_db.upsert_clinical_allergy(subject_id, allergy_name, note_id, charttime):
+                    stored_allergies += 1
+
+            # Collect for PMH extraction
+            patient_notes_for_pmh[subject_id].append({
+                "subject_id": subject_id,
+                "note_id": note_id,
+                "text": text,
+                "charttime": charttime,
+            })
+
+        # PMH extraction and upsert
+        pmh_by_patient = pe.process_patient_pmh([n for notes in patient_notes_for_pmh.values() for n in notes])
+        for subject_id, conditions in pmh_by_patient.items():
+            for condition in conditions:
+                if local_db.upsert_clinical_pmh(subject_id, condition["condition_name"], condition["source_note_id"], condition.get("chart_time")):
+                    stored_pmh += 1
+
+        return {
+            "notes_indexed": indexed_notes,
+            "allergies_upserted": stored_allergies,
+            "pmh_upserted": stored_pmh,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Ingest XLSX failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/notes/fhir/status")
 async def get_fhir_notes_status():
     """Get status of FHIR notes integration"""
