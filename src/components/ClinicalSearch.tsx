@@ -198,20 +198,7 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onResultClick, onPatien
         </div>
       )}
 
-      {/* Search Tips */}
-      {!query && (
-        <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-          <h4 className="font-semibold mb-2">Global Search Tips:</h4>
-          <ul className="text-sm text-gray-600 space-y-1">
-            <li>• <strong>VTE/DVT/PE:</strong> Find patients with venous thromboembolism or anticoagulants</li>
-            <li>• <strong>Statin:</strong> Find patients on statin medications</li>
-            <li>• <strong>Brand names:</strong> Coumadin, Lovenox, Xarelto, etc.</li>
-            <li>• <strong>Abbreviations:</strong> CHF, MI, COPD, DM, HTN</li>
-            <li>• <strong>Full text:</strong> Search within clinical notes across all patients</li>
-            <li>• <strong>Click "Select Patient"</strong> to view that patient's full record</li>
-          </ul>
-        </div>
-      )}
+      {/* Tips removed per request */}
     </div>
   );
 };
