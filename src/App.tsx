@@ -182,7 +182,7 @@ function App() {
         <div className="max-w-7xl mx-auto py-3">
           <div className="grid grid-cols-3 items-center">
             {/* Title - Aligned with Patient Directory */}
-            <div className="pl-4">
+            <div className="p-4">
               <a href="/" className="text-2xl font-bold text-white hover:underline focus:underline">
                 EHR Patient Viewer
               </a>
