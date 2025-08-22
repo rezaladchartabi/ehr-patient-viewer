@@ -161,13 +161,13 @@ class ApiService {
       
       return data;
 
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`[API] Error in ${url} (attempt ${retryCount + 1}):`, error);
       
       // Don't retry if it's an abort error or we've exceeded retry attempts
       if (
         error instanceof ApiError ||
-        error.name === 'AbortError' ||
+        (error instanceof Error && error.name === 'AbortError') ||
         retryCount >= this.config.retryAttempts
       ) {
         throw error;
@@ -201,7 +201,7 @@ class ApiService {
       const data = await this.request<BackendStatus>('/ready');
       console.debug('[API] Backend readiness check:', data);
       return data;
-          } catch (error) {
+          } catch (error: unknown) {
         console.error('[API] Backend readiness check failed:', error);
         throw error instanceof Error ? error : new Error(String(error));
       }
@@ -282,7 +282,7 @@ class ApiService {
       const results = data.results || [];
       console.debug(`[API] Search for "${query}" returned ${results.length} results`);
       return results;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`[API] Search failed for query "${query}":`, error);
       return [];
     }
@@ -324,7 +324,7 @@ class ApiService {
       });
 
       return result;
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`[API] Failed to get patient details for ${patientId}:`, error);
       return { allergies: [], notes: [] };
     }
@@ -353,16 +353,18 @@ class ApiService {
       try {
         await this.checkBackendReadiness();
         endpoints.readiness = true;
-      } catch (error) {
-        errors.push(`Readiness check failed: ${error.message}`);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push(`Readiness check failed: ${errorMessage}`);
       }
 
       // Test patients endpoint
       try {
         const patients = await this.getPatients(1);
         endpoints.patients = patients.length >= 0;
-      } catch (error) {
-        errors.push(`Patients endpoint failed: ${error.message}`);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push(`Patients endpoint failed: ${errorMessage}`);
       }
 
       // Test allergies endpoint (if we have a patient)
@@ -372,8 +374,9 @@ class ApiService {
           const allergies = await this.getPatientAllergies(patients[0].id);
           endpoints.allergies = true; // Success if no error
         }
-      } catch (error) {
-        errors.push(`Allergies endpoint failed: ${error.message}`);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push(`Allergies endpoint failed: ${errorMessage}`);
       }
 
       // Test notes endpoint (if we have a patient)
@@ -383,8 +386,9 @@ class ApiService {
           const notes = await this.getPatientNotes(patients[0].id);
           endpoints.notes = true; // Success if no error
         }
-      } catch (error) {
-        errors.push(`Notes endpoint failed: ${error.message}`);
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        errors.push(`Notes endpoint failed: ${errorMessage}`);
       }
 
       const status = errors.length === 0 ? 'healthy' : 'unhealthy';
@@ -392,9 +396,10 @@ class ApiService {
       console.debug('[API] Health check result:', { status, endpoints, errors });
       
       return { status, endpoints, errors };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('[API] Health check failed:', error);
-      return { status: 'unhealthy', endpoints, errors: [error.message] };
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return { status: 'unhealthy', endpoints, errors: [errorMessage] };
     }
   }
 }
