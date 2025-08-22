@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-FHIR_BASE_URL = "https://fdfbc9a33dc5.ngrok-free.app/"
+FHIR_BASE_URL = os.getenv("FHIR_BASE_URL", "http://localhost:8080/")
 
 # Detect pytest to adjust timings so tests don't bleed into each other
 _IS_TEST_ENV = (
@@ -50,7 +50,7 @@ _IS_TEST_ENV = (
 CACHE_TTL = 0.2 if _IS_TEST_ENV else 300  # seconds
 
 # Rate limit configuration
-RATE_LIMIT_REQUESTS = 100  # requests per window
+RATE_LIMIT_REQUESTS = 1000  # requests per window (increased from 100)
 # Use a tiny window in tests so prior requests are expired by the next test
 RATE_LIMIT_WINDOW = 60  # seconds
 
@@ -181,6 +181,7 @@ class RateLimiter:
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.requests = defaultdict(list)
+        self._lock = asyncio.Lock()  # Add thread safety
     
     def is_allowed(self, client_id: str) -> bool:
         # Keep behavior deterministic for unit tests
@@ -194,6 +195,7 @@ class RateLimiter:
                 self.requests[client_id].append(now)
                 return True
             return False
+        
         now = time.time()
         # Clean old requests outside the window
         self.requests[client_id] = [
@@ -206,6 +208,26 @@ class RateLimiter:
             self.requests[client_id].append(now)
             return True
         return False
+    
+    def reset_client(self, client_id: str):
+        """Reset rate limit for a specific client"""
+        if client_id in self.requests:
+            del self.requests[client_id]
+    
+    def get_client_stats(self, client_id: str) -> Dict:
+        """Get rate limit stats for a client"""
+        now = time.time()
+        active_requests = [
+            req_time for req_time in self.requests[client_id]
+            if now - req_time < self.window_seconds
+        ]
+        return {
+            "client_id": client_id,
+            "current_requests": len(active_requests),
+            "max_requests": self.max_requests,
+            "window_seconds": self.window_seconds,
+            "remaining_requests": max(0, self.max_requests - len(active_requests))
+        }
 
 rate_limiter = RateLimiter(RATE_LIMIT_REQUESTS, RATE_LIMIT_WINDOW)
 
@@ -262,16 +284,33 @@ async def get_http_client():
         raise
 
 async def fetch_from_fhir(path: str, params: Dict = None) -> Dict:
-    """Fetch data from FHIR server with optimized connection pooling"""
+    """Fetch data from FHIR server with optimized connection pooling and better error handling"""
     async with get_http_client() as client:
         url = f"{FHIR_BASE_URL}fhir{path}"
         if params:
             query_string = urlencode(params, doseq=True)
             url = f"{url}?{query_string}"
         
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.json()
+        except httpx.ConnectError as e:
+            logger.error(f"FHIR server connection error for {path}: {e}")
+            # Return empty bundle instead of failing
+            return {"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []}
+        except httpx.TimeoutException as e:
+            logger.error(f"FHIR server timeout for {path}: {e}")
+            return {"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []}
+        except httpx.HTTPStatusError as e:
+            logger.error(f"FHIR server HTTP error for {path}: {e.response.status_code}")
+            if e.response.status_code == 404:
+                # Return empty bundle for 404s
+                return {"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []}
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error fetching from FHIR {path}: {e}")
+            return {"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []}
 
 # Initialize sync service after fetch_from_fhir is defined
 sync_service = SyncService(FHIR_BASE_URL, local_db, fetch_from_fhir)
@@ -1223,8 +1262,65 @@ def read_root():
         "fhir_server": FHIR_BASE_URL,
         "cache_ttl": CACHE_TTL,
         "rate_limit": f"{RATE_LIMIT_REQUESTS} requests per {RATE_LIMIT_WINDOW} seconds",
-
     }
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for monitoring and Docker health checks"""
+    try:
+        # Check database connectivity
+        db_healthy = True
+        try:
+            with sqlite3.connect("local_ehr.db") as conn:
+                conn.execute("SELECT 1")
+        except Exception as e:
+            db_healthy = False
+            logger.error(f"Database health check failed: {e}")
+        
+        # Check FHIR server connectivity
+        fhir_healthy = True
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                response = await client.get(f"{FHIR_BASE_URL}fhir/metadata")
+                fhir_healthy = response.status_code == 200
+        except Exception as e:
+            fhir_healthy = False
+            logger.error(f"FHIR server health check failed: {e}")
+        
+        overall_healthy = db_healthy and fhir_healthy
+        
+        return {
+            "status": "healthy" if overall_healthy else "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "services": {
+                "database": "healthy" if db_healthy else "unhealthy",
+                "fhir_server": "healthy" if fhir_healthy else "unhealthy"
+            },
+            "version": "1.0.0"
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.now().isoformat(),
+            "error": str(e)
+        }
+
+@app.post("/rate-limit/reset")
+async def reset_rate_limit(request: Request):
+    """Reset rate limit for the current client"""
+    client_id = request.client.host if request.client else "unknown"
+    rate_limiter.reset_client(client_id)
+    return {
+        "message": f"Rate limit reset for client {client_id}",
+        "client_id": client_id
+    }
+
+@app.get("/rate-limit/status")
+async def get_rate_limit_status(request: Request):
+    """Get rate limit status for the current client"""
+    client_id = request.client.host if request.client else "unknown"
+    return rate_limiter.get_client_stats(client_id)
 
 @app.get("/Patient")
 async def get_patients(
@@ -2959,7 +3055,7 @@ async def ingest_all_from_xlsx():
     """
     try:
         import pandas as pd
-        from allergy_processor import AllergyProcessor
+        from simple_allergy_extractor import SimpleAllergyExtractor
         from pmh_extractor import PMHExtractor
 
         here = os.path.abspath(os.path.dirname(__file__))
@@ -2978,7 +3074,7 @@ async def ingest_all_from_xlsx():
         patients = local_db.get_all_patients(limit=100000, offset=0)
         subject_to_fhir = {p.get("identifier"): p.get("id") for p in patients if p.get("identifier") and p.get("id")}
 
-        ap = AllergyProcessor()
+        ap = SimpleAllergyExtractor()
         pe = PMHExtractor()
 
         indexed_notes = 0
@@ -2999,8 +3095,13 @@ async def ingest_all_from_xlsx():
             storetime = row.get("storetime")
             if pd.notna(charttime):
                 timestamp = pd.to_datetime(charttime).isoformat()
+                charttime_str = pd.to_datetime(charttime).isoformat()
+            else:
+                charttime_str = None
             if pd.notna(storetime):
                 store_time = pd.to_datetime(storetime).isoformat()
+            else:
+                store_time = None
 
             if not note_id or not subject_id or not text:
                 continue
@@ -3015,7 +3116,7 @@ async def ingest_all_from_xlsx():
 
             # Allergies from note text → upsert into DB
             for allergy_name in ap.extract_allergies_from_text(text):
-                if local_db.upsert_clinical_allergy(subject_id, allergy_name, note_id, charttime):
+                if local_db.upsert_clinical_allergy(subject_id, allergy_name, note_id, charttime_str):
                     stored_allergies += 1
 
             # Collect for PMH extraction
@@ -3066,3 +3167,17 @@ async def get_fhir_notes_status():
             "error": str(e),
             "timestamp": datetime.now().isoformat()
         }
+
+@app.post("/local/patients/test/delete")
+async def delete_test_patients():
+    """Delete all test patients (those with IDs starting with 'test-')"""
+    try:
+        deleted_count = local_db.delete_test_patients()
+        return {
+            "message": f"Deleted {deleted_count} test patients",
+            "deleted_count": deleted_count,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error deleting test patients: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
