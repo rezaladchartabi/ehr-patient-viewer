@@ -5,6 +5,7 @@ import PatientList from './components/PatientList';
 import PatientDetails from './components/PatientDetails';
 import NotesDisplay from './components/NotesDisplay';
 import ErrorBoundary from './components/ErrorBoundary';
+import SystemMonitor from './components/SystemMonitor';
 import { Patient, SearchResult, Note, Allergy } from './types';
 import apiService from './services/apiService';
 import config from './config';
@@ -254,6 +255,9 @@ function App() {
           )}
         </div>
       </div>
+      
+      {/* System Monitor */}
+      <SystemMonitor />
     </div>
     </ErrorBoundary>
   );
