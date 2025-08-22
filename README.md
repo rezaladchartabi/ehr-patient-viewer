@@ -14,6 +14,40 @@ A modern Electronic Health Record (EHR) patient viewer application with FHIR (Fa
 
 ## Architecture
 
+### Frontend (React + TypeScript)
+- **React 19**: Latest React with concurrent features
+- **TypeScript**: Full type safety and better developer experience
+- **Tailwind CSS**: Utility-first CSS framework for styling
+- **Error Boundaries**: Comprehensive error handling
+- **Custom Hooks**: Reusable logic for data fetching and state management
+
+## Critical UI Alignment
+
+⚠️ **IMPORTANT: DO NOT CHANGE THESE ALIGNMENTS**
+
+The alignment between the "EHR Patient Viewer" header title and the "Patient Directory" sidebar title is critical for UI consistency.
+
+### Files Involved:
+- `src/App.tsx` - Contains both title elements
+- `src/App.css` - Contains the `ehr-title-alignment` CSS class
+
+### CSS Class:
+```css
+.ehr-title-alignment {
+  padding: 1rem; /* 16px - matches Tailwind p-4 */
+}
+```
+
+### Usage:
+- **Header Title**: Line ~185 in `App.tsx` - Uses `ehr-title-alignment` class
+- **Sidebar Title**: Line ~208 in `App.tsx` - Uses `ehr-title-alignment` class
+
+### If You Must Change Alignment:
+1. Update the `ehr-title-alignment` class in `src/App.css`
+2. Update BOTH title elements in `src/App.tsx`
+3. Test the alignment visually
+4. Update this documentation
+
 ### Backend (FastAPI)
 - **FastAPI**: Modern, fast web framework for building APIs
 - **SQLite**: Local database for caching FHIR resources

@@ -178,11 +178,17 @@ function App() {
     <ErrorBoundary>
       <div className="flex flex-col h-screen bg-gray-50">
       {/* Global Search Header */}
+      {/* 
+        CRITICAL ALIGNMENT NOTE:
+        The "EHR Patient Viewer" title below MUST use the ehr-title-alignment CSS class
+        to maintain alignment with the "Patient Directory" title in the sidebar.
+        DO NOT change this without updating both titles.
+      */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg">
         <div className="max-w-7xl mx-auto py-3">
           <div className="grid grid-cols-3 items-center">
-            {/* Title - Aligned with Patient Directory */}
-            <div className="p-4">
+            {/* Title - Aligned with Patient Directory - CRITICAL: Use ehr-title-alignment class */}
+            <div className="ehr-title-alignment">
               <a href="/" className="text-2xl font-bold text-white hover:underline focus:underline">
                 EHR Patient Viewer
               </a>
@@ -204,8 +210,14 @@ function App() {
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Patient List Sidebar */}
+        {/* 
+          CRITICAL ALIGNMENT NOTE:
+          The "Patient Directory" title below MUST use the ehr-title-alignment CSS class
+          to maintain alignment with the "EHR Patient Viewer" title in the header.
+          DO NOT change this without updating both titles.
+        */}
         <div className="w-1/3 bg-white shadow-lg border-r border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-200">
+          <div className="ehr-title-alignment border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900">Patient Directory</h2>
             {!isBackendReady && (
               <p className="text-sm text-gray-500 mt-1">{backendStatus}</p>

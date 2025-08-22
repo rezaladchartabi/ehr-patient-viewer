@@ -149,3 +149,30 @@ button:focus {
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
 }
+
+/* ========================================
+   CRITICAL ALIGNMENT CLASSES - DO NOT CHANGE
+   ========================================
+   
+   These classes ensure consistent alignment between the header title
+   "EHR Patient Viewer" and the sidebar title "Patient Directory".
+   
+   IMPORTANT: If you change these classes, you MUST update both:
+   1. The header title in App.tsx (line ~185)
+   2. The sidebar title in App.tsx (line ~208)
+   
+   This alignment is critical for UI consistency and user experience.
+   ======================================== */
+
+/* Standard left alignment padding for titles */
+.ehr-title-alignment {
+  padding: 1rem; /* 16px - matches Tailwind p-4 */
+}
+
+/* Alternative: If you need to change alignment, use this class */
+.ehr-title-alignment-left {
+  padding-left: 1rem; /* 16px - matches Tailwind pl-4 */
+  padding-right: 1rem; /* 16px - matches Tailwind pr-4 */
+  padding-top: 1rem; /* 16px - matches Tailwind pt-4 */
+  padding-bottom: 1rem; /* 16px - matches Tailwind pb-4 */
+}
