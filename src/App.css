@@ -179,5 +179,6 @@ button:focus {
 
 /* Search container with extended width */
 .search-container-extended {
-  max-width: 934px; /* max-w-4xl (896px) + 38px */
+  width: 40%; /* Set to 40% of full width */
+  max-width: none; /* Remove width constraints */
 }
