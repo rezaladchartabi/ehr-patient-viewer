@@ -191,7 +191,7 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onSearchResults }) => {
   return (
     <div className="clinical-search relative">
       {/* Search Input with Suggestions */}
-      <div className="flex gap-3 relative" style={{ width: '40%', minWidth: '400px' }}>
+      <div className="flex gap-3 relative" style={{ width: '100%' }}>
         <div className="relative flex-1">
           <input
             ref={inputRef}
