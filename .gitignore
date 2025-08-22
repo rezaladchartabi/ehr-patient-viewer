@@ -61,3 +61,10 @@ deployment/
 backend/sample_clinical_notes.xlsx
 backend/.chroma-rag/
 .chroma*
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python

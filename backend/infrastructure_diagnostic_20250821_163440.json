@@ -1,0 +1,139 @@
+{
+  "timestamp": "2025-08-21T16:34:38.851765",
+  "port_usage": {
+    "8005": {
+      "in_use": false,
+      "process": null
+    },
+    "8006": {
+      "in_use": true,
+      "process": {
+        "pid": 18169,
+        "name": "Python",
+        "cmdline": [
+          "/Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
+          "-m",
+          "uvicorn",
+          "main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8006",
+          "--reload"
+        ]
+      }
+    },
+    "3000": {
+      "in_use": true,
+      "process": {
+        "pid": 18590,
+        "name": "node",
+        "cmdline": [
+          "/opt/homebrew/Cellar/node/24.5.0/bin/node",
+          "/Users/mohammadreza.ladchartabi/ehr-ui/node_modules/react-scripts/scripts/start.js"
+        ]
+      }
+    },
+    "8080": {
+      "in_use": true,
+      "process": {
+        "pid": 49671,
+        "name": "com.docker.backend",
+        "cmdline": [
+          "/Applications/Docker.app/Contents/MacOS/com.docker.backend",
+          "services"
+        ]
+      }
+    }
+  },
+  "process_management": {
+    "uvicorn_processes": [
+      {
+        "pid": 18169,
+        "name": "Python",
+        "cmdline": [
+          "/Library/Frameworks/Python.framework/Versions/3.13/Resources/Python.app/Contents/MacOS/Python",
+          "-m",
+          "uvicorn",
+          "main:app",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8006",
+          "--reload"
+        ]
+      }
+    ],
+    "zombie_processes": 0,
+    "issues": []
+  },
+  "environment_setup": {
+    "environment_info": {
+      "current_working_directory": "/Users/mohammadreza.ladchartabi/ehr-ui/backend",
+      "python_version": "3.13.3 (v3.13.3:6280bb54784, Apr  8 2025, 10:47:54) [Clang 15.0.0 (clang-1500.3.9.4)]",
+      "python_executable": "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",
+      "environment_variables": {},
+      "main_py_readable": true,
+      "main_py_executable": false
+    },
+    "issues": [
+      "Environment variable FHIR_BASE_URL not set",
+      "Environment variable RATE_LIMIT_REQUESTS not set",
+      "Environment variable RATE_LIMIT_WINDOW not set",
+      "Environment variable REACT_APP_API_BASE_URL not set",
+      "Environment variable PYTHONPATH not set"
+    ]
+  },
+  "service_connectivity": {
+    "connectivity": {
+      "backend_8006": {
+        "reachable": true,
+        "host": "localhost",
+        "port": 8006
+      },
+      "frontend_3000": {
+        "reachable": true,
+        "host": "localhost",
+        "port": 3000
+      },
+      "fhir_8080": {
+        "reachable": true,
+        "host": "localhost",
+        "port": 8080
+      }
+    },
+    "issues": []
+  },
+  "docker_availability": {
+    "docker_info": {
+      "installed": true,
+      "version": "Docker version 28.3.2, build 578ccf6",
+      "daemon_running": true
+    },
+    "issues": []
+  },
+  "system_resources": {
+    "cpu_usage_percent": 18.2,
+    "memory": {
+      "total_gb": 32.0,
+      "available_gb": 8.397750854492188,
+      "percent_used": 73.8
+    },
+    "disk": {
+      "total_gb": 926.3517189025879,
+      "free_gb": 538.8523750305176,
+      "percent_used": 1.6367193137288552
+    }
+  },
+  "summary": {
+    "total_issues": 5,
+    "critical_issues": [],
+    "all_issues": [
+      "Environment variable FHIR_BASE_URL not set",
+      "Environment variable RATE_LIMIT_REQUESTS not set",
+      "Environment variable RATE_LIMIT_WINDOW not set",
+      "Environment variable REACT_APP_API_BASE_URL not set",
+      "Environment variable PYTHONPATH not set"
+    ]
+  }
+}

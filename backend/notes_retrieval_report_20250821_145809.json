@@ -1,0 +1,12 @@
+{
+  "summary": {
+    "total_patients": 56,
+    "patients_with_notes": 24,
+    "patients_with_notes_errors": 32,
+    "patients_with_fhir": 0,
+    "patients_with_excel_mapping": 56,
+    "notes_success_rate": 0.42857142857142855
+  },
+  "issues": {
+    "no_notes_at_all": [
+      

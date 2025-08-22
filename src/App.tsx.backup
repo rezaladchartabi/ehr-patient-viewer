@@ -1,0 +1,1006 @@
+import React, { useState, useEffect } from 'react';
+import './App.css';
+// Chat assistant removed from UI
+import ClinicalSearch from './components/ClinicalSearch';
+
+// Types
+interface Patient {
+  id: string;
+  family_name: string;
+  gender: string;
+  birth_date: string;
+  race?: string;
+  ethnicity?: string;
+  identifier?: string;
+  marital_status?: string;
+  allergies?: any[];
+}
+
+interface Encounter {
+  id: string;
+  status: string;
+  start_date: string;
+  end_date?: string;
+  class_display: string;
+  encounter_type: string;
+}
+
+interface ResourceData {
+  medicationAdministrations: any[];
+  observations: any[];
+  medicationRequests: any[];
+  specimens: any[];
+  medicationDispenses: any[];
+  conditions: any[];
+}
+
+interface SearchResult {
+  patient_id: string;
+  resource_type: string;
+  resource_id: string;
+  content: string;
+  timestamp: string;
+  note_id: string;
+  rank: number;
+  matched_terms: string[];
+}
+
+const API_BASE = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8006';
+console.log('🔍 Debug: API_BASE:', API_BASE);
+
+function App() {
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [allPatients, setAllPatients] = useState<Patient[]>([]); // Store all patients for filtering
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [encounters, setEncounters] = useState<Encounter[]>([]);
+  const [selectedEncounter, setSelectedEncounter] = useState<string>('all');
+  const [resourceData, setResourceData] = useState<ResourceData>({
+    medicationAdministrations: [],
+    observations: [],
+    medicationRequests: [],
+    specimens: [],
+    medicationDispenses: [],
+    conditions: []
+  });
+  const [activeTab, setActiveTab] = useState('notes');
+  const [loading, setLoading] = useState(false);
+  const [allergies, setAllergies] = useState<any[]>([]);
+  const [allergiesLoading, setAllergiesLoading] = useState(false);
+  const [pmh, setPmh] = useState<any[]>([]);
+  const [pmhLoading, setPmhLoading] = useState(false);
+  const [notes, setNotes] = useState<any[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [selectedNote, setSelectedNote] = useState<any>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  // Chat assistant removed
+
+  // Load patients on mount with readiness polling and retry/backoff
+  useEffect(() => {
+    let cancelled = false;
+
+    const sleep = (ms: number) => new Promise(res => setTimeout(res, ms));
+
+    const fetchWithRetry = async () => {
+      try {
+        setLoading(true);
+
+        // 1) Poll readiness up to 20s
+        const start = Date.now();
+        while (!cancelled && Date.now() - start < 20000) {
+          try {
+            const r = await fetch(`${API_BASE}/ready`);
+            const j = await r.json();
+            if (j.ready) break;
+          } catch {}
+          await sleep(1000);
+        }
+
+        // 2) Fetch patients with up to 3 retries
+        let attempt = 0;
+        let data: any = null;
+        while (!cancelled && attempt < 3) {
+          attempt += 1;
+          try {
+            const res = await fetch(`${API_BASE}/local/patients?limit=100`);
+            if (!res.ok) throw new Error(`status ${res.status}`);
+            data = await res.json();
+            break;
+          } catch (e) {
+            if (attempt >= 3) throw e;
+            await sleep(500 * attempt);
+          }
+        }
+
+        if (cancelled) return;
+        console.log('🔍 Debug: API response data:', data);
+        const fetched = Array.isArray(data?.patients) ? data.patients : [];
+        console.log('🔍 Debug: Fetched patients:', fetched.length, fetched.slice(0, 2));
+        setAllPatients(fetched); // Store all patients
+        setPatients(fetched); // Initially show all patients
+        if (fetched.length > 0) setSelectedPatient(fetched[0]);
+      } catch (err) {
+        console.error('❌ Error loading patients:', err);
+        if (!cancelled) {
+          setAllPatients([]);
+          setPatients([]);
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    fetchWithRetry();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Debug: Monitor patients state
+  useEffect(() => {
+    console.log('🔍 Debug: patients state changed:', patients.length, patients.slice(0, 2));
+  }, [patients]);
+
+  // Handle search results and filter patients
+  const handleSearchResults = (results: SearchResult[]) => {
+    setSearchResults(results);
+    setIsSearching(true);
+    
+    if (results.length === 0) {
+      // No search results, show empty patient list
+      setPatients([]);
+      setSelectedPatient(null);
+    } else {
+      // Filter patients based on search results
+      const patientIds = Array.from(new Set(results.map(result => result.patient_id)));
+      const filteredPatients = allPatients.filter(patient => 
+        patientIds.includes(patient.id)
+      );
+      
+      setPatients(filteredPatients);
+      
+      // Select first filtered patient if available
+      if (filteredPatients.length > 0) {
+        setSelectedPatient(filteredPatients[0]);
+      } else {
+        setSelectedPatient(null);
+      }
+    }
+  };
+
+  // Clear search and show all patients
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setIsSearching(false);
+    setPatients(allPatients);
+    if (allPatients.length > 0) {
+      setSelectedPatient(allPatients[0]);
+    }
+  };
+
+  // Load patient data when patient is selected
+  useEffect(() => {
+    if (!selectedPatient) return;
+    
+    setLoading(true);
+    setAllergiesLoading(true);
+    setPmhLoading(true);
+    setNotesLoading(true);
+    
+    // Load encounters first
+    fetch(`${API_BASE}/Encounter?patient=Patient/${selectedPatient.id}&_count=100`)
+      .then(r => r.json())
+      .then(encountersRes => {
+        // Process encounters
+        const encounterList = (encountersRes.entry || []).map((e: any) => ({
+          id: e.resource.id,
+          status: e.resource.status,
+          start_date: e.resource.period?.start || '',
+          end_date: e.resource.period?.end || '',
+          class_display: e.resource.class?.display || e.resource.class?.code || '',
+          encounter_type: e.resource.type?.[0]?.coding?.[0]?.display || ''
+        }));
+        
+        setEncounters(encounterList);
+        setSelectedEncounter('all');
+        
+        // Load all patient data (for "All Encounters" view)
+        return Promise.all([
+          fetch(`${API_BASE}/Condition?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
+          fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
+          fetch(`${API_BASE}/Observation?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
+          fetch(`${API_BASE}/MedicationRequest?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
+          fetch(`${API_BASE}/Specimen?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
+          fetch(`${API_BASE}/MedicationDispense?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json())
+        ]);
+      })
+      .then(([conditionsRes, medAdminRes, obsRes, medReqRes, specimenRes, medDispRes]) => {
+        // Process all resource types for "All Encounters" view
+        setResourceData({
+          conditions: conditionsRes.entry || [],
+          medicationAdministrations: medAdminRes.entry || [],
+          observations: obsRes.entry || [],
+          medicationRequests: medReqRes.entry || [],
+          specimens: specimenRes.entry || [],
+          medicationDispenses: medDispRes.entry || []
+        });
+        
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to load patient data:', err);
+        setLoading(false);
+      });
+
+    // Load allergies separately
+    fetch(`${API_BASE}/local/patients/${selectedPatient.id}/allergies`)
+      .then(res => res.json())
+      .then(data => {
+        setAllergies(data.allergies || []);
+        setAllergiesLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to load allergies:', err);
+        setAllergies([]);
+        setAllergiesLoading(false);
+      });
+
+    // Load Past Medical History separately
+    fetch(`${API_BASE}/local/patients/${selectedPatient.id}/pmh`)
+      .then(res => res.json())
+      .then(data => {
+        setPmh(data.pmh_conditions || []);
+        setPmhLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to load PMH:', err);
+        setPmh([]);
+        setPmhLoading(false);
+      });
+
+    // Load Notes from notes processor
+    fetch(`${API_BASE}/notes/patients/${selectedPatient.id}`)
+      .then(res => res.json())
+      .then(data => {
+        setNotes(data.notes || []);
+        setNotesLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to load notes:', err);
+        setNotes([]);
+        setNotesLoading(false);
+      });
+  }, [selectedPatient]);
+
+  // Load encounter-specific data when encounter is selected
+  useEffect(() => {
+    if (!selectedPatient || selectedEncounter === 'all') return;
+    
+    setLoading(true);
+    
+    const encounter = encounters.find(e => e.id === selectedEncounter);
+    if (!encounter) {
+      setLoading(false);
+      return;
+    }
+    
+    // Make API calls to encounter-specific endpoints
+    Promise.all([
+      fetch(`${API_BASE}/encounter/medications?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json()),
+      fetch(`${API_BASE}/encounter/observations?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json()),
+      fetch(`${API_BASE}/encounter/procedures?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json()),
+      fetch(`${API_BASE}/encounter/specimens?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json())
+    ])
+    .then(([medicationsRes, observationsRes, proceduresRes, specimensRes]) => {
+      // Process encounter-specific data
+      setResourceData({
+        conditions: [], // Conditions are typically not encounter-specific
+        medicationAdministrations: medicationsRes.administrations || [],
+        observations: observationsRes.observations || [],
+        medicationRequests: medicationsRes.requests || [],
+        specimens: specimensRes.specimens || [],
+        medicationDispenses: medicationsRes.dispenses || []
+      });
+      
+      setLoading(false);
+    })
+    .catch(err => {
+      console.error('Failed to load encounter data:', err);
+      setLoading(false);
+    });
+  }, [selectedEncounter, selectedPatient, encounters]);
+
+    // No longer need client-side filtering since we use server-side API calls
+
+  // Format different resource types for display
+  const formatResource = (item: any, resourceType: string) => {
+    const resource = item.resource;
+    
+    switch (resourceType) {
+      case 'conditions':
+        return (
+          <div className="p-4">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <h4 className="text-lg font-semibold text-gray-900 mb-2">
+                  {resource.code?.text || resource.code?.coding?.[0]?.display || 'Unknown Condition'}
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Status</span>
+                    <p className="text-sm text-gray-900">{resource.clinicalStatus?.coding?.[0]?.code || 'Unknown'}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Category</span>
+                    <p className="text-sm text-gray-900">{resource.category?.[0]?.coding?.[0]?.display || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <span className="text-sm font-medium text-gray-500">Recorded</span>
+                    <p className="text-sm text-gray-900">{resource.recordedDate || 'N/A'}</p>
+                  </div>
+                  {resource.code?.coding?.[0]?.code && (
+                    <div>
+                      <span className="text-sm font-medium text-gray-500">Code</span>
+                      <p className="text-sm text-gray-900">{resource.code.coding[0].code}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="ml-4">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  Condition
+                </span>
+              </div>
+            </div>
+          </div>
+        );
+        
+      case 'medicationRequests':
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.medicationCodeableConcept?.text || 
+               resource.medicationCodeableConcept?.coding?.[0]?.display ||
+               resource.medicationCodeableConcept?.coding?.[0]?.code ||
+               resource.medicationReference?.display || 'Unknown Medication'}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
+              <span className="detail-item">Intent: {resource.intent || 'N/A'}</span>
+              <span className="detail-item">Authored: {resource.authoredOn || 'N/A'}</span>
+              {resource.route_display && (
+                <span className="detail-item">Route: {resource.route_display}</span>
+              )}
+              {resource.timing_display && (
+                <span className="detail-item">Timing: {resource.timing_display}</span>
+              )}
+              {resource.medicationCodeableConcept?.coding?.[0]?.code && (
+                <span className="detail-item">Code: {resource.medicationCodeableConcept.coding[0].code}</span>
+              )}
+              {resource.dosageInstruction?.[0]?.text && (
+                <span className="detail-item">Dosage: {resource.dosageInstruction[0].text}</span>
+              )}
+            </div>
+          </div>
+        );
+        
+      case 'medicationAdministrations':
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.medicationCodeableConcept?.text || 
+               resource.medicationCodeableConcept?.coding?.[0]?.display ||
+               resource.medicationCodeableConcept?.coding?.[0]?.code ||
+               resource.medicationReference?.display || 'Unknown Medication'}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
+              <span className="detail-item">Effective: {resource.effectiveDateTime || resource.effectivePeriod?.start || 'N/A'}</span>
+              {resource.route_display && (
+                <span className="detail-item">Route: {resource.route_display}</span>
+              )}
+              {resource.timing_display && (
+                <span className="detail-item">Timing: {resource.timing_display}</span>
+              )}
+              {resource.medicationCodeableConcept?.coding?.[0]?.code && (
+                <span className="detail-item">Code: {resource.medicationCodeableConcept.coding[0].code}</span>
+              )}
+              {resource.dosage?.dose?.value && (
+                <span className="detail-item">Dose: {resource.dosage.dose.value} {resource.dosage.dose.unit}</span>
+              )}
+            </div>
+          </div>
+        );
+        
+      case 'observations':
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.code?.text || resource.code?.coding?.[0]?.display || 'Unknown Observation'}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
+              <span className="detail-item">Effective: {resource.effectiveDateTime || 'N/A'}</span>
+              {resource.valueQuantity && (
+                <span className="detail-item">Value: {resource.valueQuantity.value} {resource.valueQuantity.unit}</span>
+              )}
+              {resource.valueString && (
+                <span className="detail-item">Value: {resource.valueString}</span>
+              )}
+              {resource.valueCodeableConcept?.text && (
+                <span className="detail-item">Value: {resource.valueCodeableConcept.text}</span>
+              )}
+            </div>
+          </div>
+        );
+        
+      case 'specimens':
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.type?.text || resource.type?.coding?.[0]?.display || 'Unknown Specimen'}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
+              <span className="detail-item">Collected: {resource.collection?.collectedDateTime || 'N/A'}</span>
+              {resource.collection?.bodySite?.text && (
+                <span className="detail-item">Body Site: {resource.collection.bodySite.text}</span>
+              )}
+              {resource.collection?.method?.text && (
+                <span className="detail-item">Method: {resource.collection.method.text}</span>
+              )}
+            </div>
+          </div>
+        );
+        
+      case 'medicationDispenses':
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.medicationCodeableConcept?.text || 
+               resource.medicationCodeableConcept?.coding?.[0]?.display ||
+               resource.medicationCodeableConcept?.coding?.[0]?.code ||
+               resource.medicationReference?.display || 'Unknown Medication'}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
+              <span className="detail-item">Dispensed: {resource.whenHandedOver || resource.whenPrepared || 'N/A'}</span>
+              {resource.route_display && (
+                <span className="detail-item">Route: {resource.route_display}</span>
+              )}
+              {resource.timing_display && (
+                <span className="detail-item">Timing: {resource.timing_display}</span>
+              )}
+              {/* Show quantity even if 0 to help debug */}
+              {resource.quantity && (
+                <span className="detail-item">Quantity: {resource.quantity.value || 0} {resource.quantity.unit || resource.quantity.code || ''}</span>
+              )}
+              {resource.daysSupply && (
+                <span className="detail-item">Days Supply: {resource.daysSupply.value || 0}</span>
+              )}
+              {/* Additional quantity fields that might exist */}
+              {resource.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.value && (
+                <span className="detail-item">Dose: {resource.dosageInstruction[0].doseAndRate[0].doseQuantity.value} {resource.dosageInstruction[0].doseAndRate[0].doseQuantity.unit}</span>
+              )}
+              {/* Show performer/dispenser if available */}
+              {resource.performer?.[0]?.actor?.display && (
+                <span className="detail-item">Dispenser: {resource.performer[0].actor.display}</span>
+              )}
+              {/* Show location if available */}
+              {resource.location?.display && (
+                <span className="detail-item">Location: {resource.location.display}</span>
+              )}
+            </div>
+          </div>
+        );
+        
+      default:
+        return (
+          <div className="resource-item">
+            <div className="resource-title">
+              {resource.resourceType} - {resource.id}
+            </div>
+            <div className="resource-details">
+              <span className="detail-item">Status: {resource.status || 'N/A'}</span>
+            </div>
+          </div>
+        );
+    }
+  };
+
+  const renderResourceTab = (tabName: string, resources: any[], resourceType: string) => {
+    if (activeTab !== tabName) return null;
+    
+    if (loading) return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading {tabName.toLowerCase()}...</p>
+        </div>
+      </div>
+    );
+    
+    if (resources.length === 0) {
+      return (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No {tabName} Found</h3>
+            <p className="text-gray-600">No {tabName.toLowerCase()} data available for this patient</p>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="p-6">
+        <div className="mb-6">
+          <h3 className="text-xl font-semibold text-gray-900">{tabName}</h3>
+          <p className="text-gray-600">{resources.length} items found</p>
+        </div>
+        <div className="space-y-4">
+          {resources.map((item: any, idx: number) => (
+            <div key={idx} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+              {formatResource(item, resourceType)}
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex flex-col h-screen bg-gray-50">
+      {/* Global Search Header */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg">
+        <div className="w-full px-6 py-4">
+          <div className="grid grid-cols-3 items-center">
+            <h1 className="text-2xl md:text-3xl font-bold text-white">
+              <a href="/" className="hover:underline focus:underline outline-none">EHR Patient Viewer</a>
+            </h1>
+            <div className="justify-self-center w-full max-w-2xl md:max-w-3xl">
+              <ClinicalSearch 
+                onSearchResults={handleSearchResults}
+                onPatientSelect={(patientId) => {
+                  const patient = patients.find(p => p.id === patientId);
+                  if (patient) {
+                    setSelectedPatient(patient);
+                  }
+                }}
+              />
+            </div>
+            <div />
+          </div>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Patient List Sidebar */}
+        <div className={`w-96 bg-white shadow-lg border-r border-gray-200 flex flex-col`}>
+          <div className="p-6 border-b border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-xl font-semibold text-gray-900">Patient Directory</h2>
+              {isSearching && (
+                <button
+                  onClick={clearSearch}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  Clear Search
+                </button>
+              )}
+            </div>
+            <p className="text-sm text-gray-600">
+              {isSearching ? 'Patients matching your search criteria' : 'Select a patient to view their clinical data'}
+            </p>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {patients.length > 0 ? (
+              patients.map(patient => (
+                <div
+                  key={patient.id}
+                  className={`p-4 cursor-pointer transition-all duration-200 ${
+                    selectedPatient?.id === patient.id 
+                      ? 'bg-blue-50 border-l-4 border-blue-500 shadow-sm' 
+                      : 'hover:bg-gray-50 border-l-4 border-transparent'
+                  }`}
+                  onClick={() => setSelectedPatient(patient)}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="font-semibold text-gray-900 truncate">{patient.family_name}</div>
+                      <div className="text-sm text-gray-500 mt-1">
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 mr-2">
+                          {patient.gender}
+                        </span>
+                        {patient.birth_date}
+                      </div>
+                    </div>
+                    {selectedPatient?.id === patient.id && (
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    )}
+                  </div>
+                </div>
+              ))
+            ) : isSearching ? (
+              <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No patients found</h3>
+                <p className="text-gray-600 mb-4">No patients match your search criteria</p>
+                <button
+                  onClick={clearSearch}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  Show All Patients
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full p-8 text-center">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No patients available</h3>
+                <p className="text-gray-600">No patients are currently loaded in the system</p>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Patient Details */}
+        <div className={`flex-1 flex flex-col transition-all duration-300`}>
+          {selectedPatient ? (
+            <>
+              {/* Patient Info Header */}
+              <div className="bg-white shadow-sm border-b border-gray-200">
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h1 className="text-2xl font-bold text-gray-900 mb-1">{selectedPatient.family_name}</h1>
+                      <p className="text-gray-600">Patient ID: {selectedPatient.identifier}</p>
+                    </div>
+                    {/* Assistant toggle removed */}
+                  </div>
+                  
+                  {/* Patient Demographics */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-500">Gender</div>
+                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.gender}</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-500">Birth Date</div>
+                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.birth_date}</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-500">Race</div>
+                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.race || 'N/A'}</div>
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="text-sm font-medium text-gray-500">Marital Status</div>
+                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.marital_status || 'N/A'}</div>
+                    </div>
+                  </div>
+                  
+                  {/* Allergies Section */}
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Allergies</h3>
+                    {allergiesLoading ? (
+                      <div className="text-gray-500">Loading allergies...</div>
+                    ) : allergies.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {allergies.map((allergy, index) => (
+                          <span 
+                            key={index}
+                            className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800 border border-red-200"
+                            title={allergy.note || 'Clinical allergy'}
+                          >
+                            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                            </svg>
+                            {allergy.allergy_name}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-gray-500 bg-green-50 border border-green-200 rounded-lg p-3">
+                        <div className="flex items-center">
+                          <svg className="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          No known allergies
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Encounter Filter */}
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Encounter</label>
+                    <select
+                      value={selectedEncounter}
+                      onChange={(e) => setSelectedEncounter(e.target.value)}
+                      className="w-full max-w-md border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    >
+                      <option value="all">All Encounters</option>
+                      {encounters.map(encounter => (
+                        <option key={encounter.id} value={encounter.id}>
+                          {encounter.class_display} - {encounter.start_date} ({encounter.status})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+            {/* Notes Header */}
+            <div className="bg-white border-b border-gray-200">
+              <div className="px-6 py-4">
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl">📝</span>
+                  <h2 className="text-xl font-semibold text-gray-900">Clinical Notes</h2>
+                  <span className="px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800">
+                    {notes.length} notes
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Notes Content */}
+            <div className="flex-1 overflow-y-auto bg-gray-50">
+              <div className="p-6">
+                  <div className="mb-6">
+                    <h3 className="text-xl font-semibold text-gray-900">Clinical Notes</h3>
+                    <p className="text-gray-600">{notes.length} notes found</p>
+                  </div>
+                  {notesLoading ? (
+                    <div className="flex items-center justify-center h-64">
+                      <div className="text-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                        <p className="text-gray-600">Loading clinical notes...</p>
+                      </div>
+                    </div>
+                  ) : notes.length > 0 ? (
+                    <div className="space-y-4">
+                      {notes.map((note, index) => (
+                        <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md transition-all duration-200 hover:border-blue-300 group" 
+                             onClick={() => setSelectedNote(note)}>
+                          <div className="p-4">
+                            <div className="flex items-start justify-between mb-3">
+                              <div className="flex-1">
+                                <h4 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+                                  {note.note_id || `Note ${index + 1}`}
+                                </h4>
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Click to view full details
+                                </p>
+                              </div>
+                              <div className="flex flex-col items-end space-y-2">
+                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                                  {note.note_type || 'General'}
+                                </span>
+                                <span className="text-xs text-gray-400">
+                                  {((note.text || note.content || '').length).toLocaleString()} chars
+                                </span>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-3">
+                              <div>
+                                <span className="text-sm font-medium text-gray-500">Charted</span>
+                                <p className="text-sm text-gray-900">{note.charttime_formatted || (note.timestamp ? new Date(note.timestamp).toLocaleString() : 'Unknown')}</p>
+                              </div>
+                              <div>
+                                <span className="text-sm font-medium text-gray-500">Stored</span>
+                                <p className="text-sm text-gray-900">{note.storetime_formatted || (note.store_time ? new Date(note.store_time).toLocaleString() : 'Unknown')}</p>
+                              </div>
+                              <div>
+                                <span className="text-sm font-medium text-gray-500">Patient ID</span>
+                                <p className="text-sm text-gray-900 font-mono">{note.patient_id || 'N/A'}</p>
+                              </div>
+                            </div>
+                            <div className="bg-gray-50 rounded-lg p-3 group-hover:bg-blue-50 transition-colors">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm font-medium text-gray-500">Content Preview</span>
+                                <span className="text-xs text-gray-400">Click to expand</span>
+                              </div>
+                              <p className="text-sm text-gray-700 line-clamp-3">
+                                {(note.text || note.content || '').substring(0, 300)}
+                                {(note.text || note.content || '').length > 300 && '...'}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center h-64">
+                      <div className="text-center">
+                        <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">No Clinical Notes</h3>
+                        <p className="text-gray-600">No clinical notes available for this patient</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Note Detail Modal */}
+              {selectedNote && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-lg p-6 max-w-6xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                    <div className="flex justify-between items-center mb-6">
+                      <div>
+                        <h2 className="text-2xl font-bold text-gray-900">
+                          {selectedNote.note_id || 'Clinical Note'}
+                        </h2>
+                        <p className="text-sm text-gray-600 mt-1">
+                          Patient: {selectedPatient?.family_name} (ID: {selectedPatient?.id})
+                        </p>
+                      </div>
+                      <button 
+                        onClick={() => setSelectedNote(null)}
+                        className="text-gray-500 hover:text-gray-700 text-2xl font-bold p-2 hover:bg-gray-100 rounded-full transition-colors"
+                      >
+                        ✕
+                      </button>
+                    </div>
+
+                    {/* Note Metadata Section */}
+                    <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Note Information</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div>
+                          <span className="text-sm font-medium text-gray-500 block">Note ID</span>
+                          <span className="text-sm text-gray-900 font-mono">{selectedNote.note_id || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-500 block">Note Type</span>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {selectedNote.note_type || 'General'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-500 block">Charted Date</span>
+                          <span className="text-sm text-gray-900">
+                            {selectedNote.charttime_formatted || 
+                             (selectedNote.timestamp ? new Date(selectedNote.timestamp).toLocaleString() : 'Unknown')}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-500 block">Stored Date</span>
+                          <span className="text-sm text-gray-900">
+                            {selectedNote.storetime_formatted || 
+                             (selectedNote.store_time ? new Date(selectedNote.store_time).toLocaleString() : 'Unknown')}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-500 block">Created At</span>
+                          <span className="text-sm text-gray-900">
+                            {selectedNote.created_at ? new Date(selectedNote.created_at).toLocaleString() : 'Unknown'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-500 block">Content Length</span>
+                          <span className="text-sm text-gray-900">
+                            {((selectedNote.text || selectedNote.content || '').length).toLocaleString()} characters
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-500 block">Patient ID</span>
+                          <span className="text-sm text-gray-900 font-mono">{selectedNote.patient_id || 'N/A'}</span>
+                        </div>
+                        <div>
+                          <span className="text-sm font-medium text-gray-500 block">Database ID</span>
+                          <span className="text-sm text-gray-900 font-mono">{selectedNote.id || 'N/A'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Note Content Section */}
+                    <div className="mb-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-3">Note Content</h3>
+                      <div className="bg-white border border-gray-200 rounded-lg p-6">
+                        <div className="whitespace-pre-wrap text-sm leading-relaxed text-gray-800 font-mono bg-gray-50 p-4 rounded border">
+                          {selectedNote.text || selectedNote.content || 'No content available'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Extracted Information Section (if available) */}
+                    {(selectedNote.allergies || selectedNote.conditions || selectedNote.medications) && (
+                      <div className="mb-6">
+                        <h3 className="text-lg font-semibold text-gray-900 mb-3">Extracted Information</h3>
+                        
+                        {selectedNote.allergies && selectedNote.allergies.length > 0 && (
+                          <div className="mb-4">
+                            <h4 className="text-md font-medium text-gray-800 mb-2">Allergies Found</h4>
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                              {selectedNote.allergies.map((allergy: any, index: number) => (
+                                <div key={index} className="text-sm text-red-800">
+                                  • {allergy.allergy_name || allergy.name}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedNote.conditions && selectedNote.conditions.length > 0 && (
+                          <div className="mb-4">
+                            <h4 className="text-md font-medium text-gray-800 mb-2">Conditions Found</h4>
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                              {selectedNote.conditions.map((condition: any, index: number) => (
+                                <div key={index} className="text-sm text-blue-800">
+                                  • {condition.condition_name || condition.name}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {selectedNote.medications && selectedNote.medications.length > 0 && (
+                          <div className="mb-4">
+                            <h4 className="text-md font-medium text-gray-800 mb-2">Medications Found</h4>
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                              {selectedNote.medications.map((medication: any, index: number) => (
+                                <div key={index} className="text-sm text-green-800">
+                                  • {medication.medication_name || medication.name}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200">
+                      <button
+                        onClick={() => {
+                          const text = selectedNote.text || selectedNote.content || '';
+                          navigator.clipboard.writeText(text);
+                        }}
+                        className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                      >
+                        Copy Content
+                      </button>
+                      <button
+                        onClick={() => setSelectedNote(null)}
+                        className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 bg-gray-50">
+            <div className="text-center">
+              <svg className="mx-auto h-24 w-24 text-gray-300 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No Patient Selected</h3>
+              <p className="text-gray-600">Choose a patient from the directory to view their clinical data</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+
+      {/* Assistant panel removed */}
+    </div>
+  );
+}
+
+export default App;

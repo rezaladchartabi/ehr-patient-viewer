@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class NotesProcessor:
     def __init__(self, db_path: str = "notes_index.db", fhir_base_url: str = None):
         self.db_path = db_path
-        self.fhir_base_url = fhir_base_url or "https://fdfbc9a33dc5.ngrok-free.app/"
+        self.fhir_base_url = fhir_base_url or os.getenv("FHIR_BASE_URL", "http://localhost:8080/")
         self._init_db()
     
     def _init_db(self):
@@ -147,7 +147,7 @@ class NotesProcessor:
                 for coding in doc_ref["type"]["coding"]:
                     if coding.get("code"):
                         note_type = coding["code"]
-                        break
+                    break
             
             # Extract timestamp
             timestamp = doc_ref.get("date", "")
@@ -424,13 +424,14 @@ class NotesProcessor:
             results = []
             for row in cur.fetchall():
                 results.append({
-                    'id': row[0],
-                    'patient_id': row[1],
-                    'note_id': row[2],
-                    'content': row[3],
-                    'note_type': row[4],
-                    'timestamp': row[5],
-                    'created_at': row[6]
+                    'id': row[0],           # id
+                    'patient_id': row[1],   # patient_id
+                    'note_id': row[2],      # note_id
+                    'content': row[3],      # content
+                    'note_type': row[4],    # note_type
+                    'timestamp': row[5],    # timestamp
+                    'created_at': row[6],   # created_at
+                    'store_time': row[7]    # store_time
                 })
             
             return results
@@ -536,6 +537,8 @@ class NotesProcessor:
                 'db_path': self.db_path,
                 'error': str(e)
             }
+        finally:
+            pass
 
 # Global instance consolidated into the primary local DB
 import os

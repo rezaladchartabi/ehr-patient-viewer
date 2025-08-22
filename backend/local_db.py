@@ -857,3 +857,16 @@ class LocalDatabase:
         except Exception as e:
             logger.error(f"Error getting PMH for patient {patient_id}: {e}")
             return []
+
+    def delete_test_patients(self) -> int:
+        """Delete all test patients (those with IDs starting with 'test-')"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.execute("DELETE FROM patients WHERE id LIKE 'test-%'")
+                deleted_count = cursor.rowcount
+                conn.commit()
+                logger.info(f"Deleted {deleted_count} test patients")
+                return deleted_count
+        except Exception as e:
+            logger.error(f"Error deleting test patients: {e}")
+            return 0

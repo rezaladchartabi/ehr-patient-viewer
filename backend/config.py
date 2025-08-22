@@ -29,7 +29,7 @@ class RateLimitConfig:
 @dataclass
 class FHIRConfig:
     """FHIR server configuration"""
-    base_url: str = "https://imagination-promptly-subsequent-truck.trycloudflare.com/fhir"
+    base_url: str = "http://localhost:8080/"
     timeout: float = 30.0
     max_retries: int = 3
     retry_delay: float = 5.0

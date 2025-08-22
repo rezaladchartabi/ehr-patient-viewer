@@ -1,42 +1,67 @@
 #!/bin/bash
 
-# Backend startup script - ensures correct directory and proper startup
+# Backend Startup Script
+# This script properly starts the backend with all necessary environment setup
 
-# Get the directory where this script is located
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-echo "Starting backend from: $SCRIPT_DIR"
+set -e  # Exit on any error
 
-# Change to the backend directory
-cd "$SCRIPT_DIR" || {
-    echo "ERROR: Failed to change to backend directory: $SCRIPT_DIR"
-    exit 1
-}
+echo "🚀 Starting EHR Backend..."
 
-# Check if we're in the right directory (should contain main.py)
+# Set the working directory
+cd "$(dirname "$0")"
+echo "📁 Working directory: $(pwd)"
+
+# Load environment variables
+if [ -f "env.config" ]; then
+    echo "📋 Loading environment configuration..."
+    export $(cat env.config | grep -v '^#' | xargs)
+fi
+
+# Set default environment variables if not set
+export FHIR_BASE_URL=${FHIR_BASE_URL:-"http://localhost:8080/"}
+export RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-1000}
+export RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW:-60}
+export PYTHONPATH=${PYTHONPATH:-"$(pwd)"}
+
+echo "🔧 Environment Configuration:"
+echo "   FHIR_BASE_URL: $FHIR_BASE_URL"
+echo "   RATE_LIMIT_REQUESTS: $RATE_LIMIT_REQUESTS"
+echo "   RATE_LIMIT_WINDOW: $RATE_LIMIT_WINDOW"
+echo "   PYTHONPATH: $PYTHONPATH"
+
+# Check if main.py exists
 if [ ! -f "main.py" ]; then
-    echo "ERROR: main.py not found in current directory. Current directory: $(pwd)"
-    echo "Expected to be in: $SCRIPT_DIR"
+    echo "❌ Error: main.py not found in $(pwd)"
     exit 1
 fi
 
-echo "✅ Backend directory confirmed: $(pwd)"
-echo "✅ main.py found"
-
 # Kill any existing uvicorn processes
-echo "🔄 Stopping any existing backend processes..."
-pkill -f "uvicorn main:app" 2>/dev/null || true
+echo "🧹 Cleaning up existing processes..."
+pkill -f "uvicorn.*main:app" || true
 sleep 2
 
-# Check if port 8000 is available
-if lsof -Pi :8000 -sTCP:LISTEN -t >/dev/null 2>&1; then
-    echo "⚠️  Port 8000 is still in use. Attempting to kill processes on port 8000..."
-    lsof -ti:8000 | xargs kill -9 2>/dev/null || true
+# Check if port is available
+PORT=${PORT:-8006}
+if lsof -Pi :$PORT -sTCP:LISTEN -t >/dev/null ; then
+    echo "⚠️  Port $PORT is already in use. Attempting to free it..."
+    lsof -ti:$PORT | xargs kill -9 || true
     sleep 2
 fi
 
-# Start the backend
-echo "🚀 Starting backend server..."
-echo "📁 Working directory: $(pwd)"
-echo "🔗 Server will be available at: http://localhost:8000"
+# Activate virtual environment if it exists
+if [ -f "../.venv/bin/activate" ]; then
+    echo "🐍 Activating virtual environment..."
+    source ../.venv/bin/activate
+fi
 
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+# Install dependencies if needed
+if [ ! -d "../.venv" ]; then
+    echo "📦 Creating virtual environment..."
+    python3 -m venv ../.venv
+    source ../.venv/bin/activate
+    pip install -r requirements.txt
+fi
+
+# Start the backend
+echo "🚀 Starting uvicorn server on port $PORT..."
+exec python3 -m uvicorn main:app --host 0.0.0.0 --port $PORT --reload

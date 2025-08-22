@@ -4,6 +4,7 @@ import time
 from typing import Dict, List, Optional, Any, Tuple
 from datetime import datetime, timedelta
 import logging
+import os
 try:
     from local_db import LocalDatabase
 except ImportError:
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class SyncService:
     def __init__(self, fhir_base_url: str, local_db: LocalDatabase, fetch_from_fhir_func=None):
-        self.fhir_base_url = fhir_base_url
+        self.fhir_base_url = fhir_base_url or os.getenv("FHIR_BASE_URL", "http://localhost:8080/")
         self.local_db = local_db
         self.fetch_from_fhir = fetch_from_fhir_func
         self.sync_interval = 300  # 5 minutes
