@@ -177,8 +177,8 @@ button:focus {
   padding-bottom: 1rem; /* 16px - matches Tailwind pb-4 */
 }
 
-/* Search container with extended width */
-.search-container-extended {
-  width: 40%; /* Set to 40% of full width */
-  max-width: none; /* Remove width constraints */
-}
+/* Search container with extended width - now handled by inline styles */
+/* .search-container-extended {
+  width: 40%; 
+  max-width: none; 
+} */

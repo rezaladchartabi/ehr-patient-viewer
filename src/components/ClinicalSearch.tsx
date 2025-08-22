@@ -191,8 +191,8 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onSearchResults }) => {
   return (
     <div className="clinical-search relative">
       {/* Search Input with Suggestions */}
-      <div className="flex gap-3 relative search-container-extended">
-        <div className="relative" style={{ width: '100%' }}>
+      <div className="flex gap-3 relative" style={{ width: '40%', minWidth: '400px' }}>
+        <div className="relative flex-1">
           <input
             ref={inputRef}
             type="text"
@@ -202,6 +202,7 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onSearchResults }) => {
             onFocus={() => query.trim() && suggestions.length > 0 && setShowSuggestions(true)}
             placeholder="Search medications, diagnoses, notes..."
             className="w-full px-6 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base text-center placeholder-gray-500"
+            style={{ width: '100%' }}
           />
           
           {/* Suggestions Dropdown */}
