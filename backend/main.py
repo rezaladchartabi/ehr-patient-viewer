@@ -2456,13 +2456,28 @@ async def get_patient_allergies_by_subject_id(subject_id: str):
 
 @app.get("/local/patients/{patient_id}/allergies")
 async def get_patient_allergies_by_fhir_id(patient_id: str):
-    """Get allergies for a patient by FHIR Patient ID"""
+    """Get allergies for a patient by FHIR Patient ID or identifier"""
     try:
         if not local_db:
             raise HTTPException(status_code=500, detail="Local database not available")
         
-        # Get allergies from database
+        # First try direct lookup (FHIR ID)
         allergies = local_db.get_patient_allergies(patient_id)
+        
+        # If no results and patient_id looks like an identifier (numeric), try mapping
+        if not allergies and patient_id.isdigit():
+            try:
+                # Build subject_id -> fhir_id map from local DB
+                patients = local_db.get_all_patients(limit=100000, offset=0)
+                subject_to_fhir = {p.get("identifier"): p.get("id") for p in patients if p.get("identifier") and p.get("id")}
+                
+                fhir_id = subject_to_fhir.get(patient_id)
+                if fhir_id:
+                    logger.info(f"Mapping identifier {patient_id} to FHIR ID {fhir_id} for allergies")
+                    allergies = local_db.get_patient_allergies(fhir_id)
+                    patient_id = fhir_id  # Return the actual FHIR ID used
+            except Exception as map_err:
+                logger.warning(f"Failed to map identifier {patient_id} for allergies: {map_err}")
         
         return {
             "patient_id": patient_id,
@@ -2806,13 +2821,33 @@ async def get_patient_notes_endpoint(
     limit: int = 100,
     offset: int = 0
 ):
-    """Get all notes for a specific patient"""
+    """Get all notes for a specific patient - handles both FHIR ID and identifier"""
     try:
+        # First try direct lookup (FHIR ID)
         results = notes_processor.get_patient_notes(
             patient_id=patient_id,
             limit=limit,
             offset=offset
         )
+        
+        # If no results and patient_id looks like an identifier (numeric), try mapping
+        if not results and patient_id.isdigit():
+            try:
+                # Build subject_id -> fhir_id map from local DB
+                patients = local_db.get_all_patients(limit=100000, offset=0)
+                subject_to_fhir = {p.get("identifier"): p.get("id") for p in patients if p.get("identifier") and p.get("id")}
+                
+                fhir_id = subject_to_fhir.get(patient_id)
+                if fhir_id:
+                    logger.info(f"Mapping identifier {patient_id} to FHIR ID {fhir_id}")
+                    results = notes_processor.get_patient_notes(
+                        patient_id=fhir_id,
+                        limit=limit,
+                        offset=offset
+                    )
+                    patient_id = fhir_id  # Return the actual FHIR ID used
+            except Exception as map_err:
+                logger.warning(f"Failed to map identifier {patient_id}: {map_err}")
         
         return {
             "patient_id": patient_id,
