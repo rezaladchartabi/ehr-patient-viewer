@@ -191,7 +191,7 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onSearchResults }) => {
   return (
     <div className="clinical-search relative">
       {/* Search Input with Suggestions */}
-      <div className="flex gap-3 relative">
+      <div className="flex gap-3 relative max-w-2xl">
         <div className="flex-1 relative">
           <input
             ref={inputRef}
@@ -201,7 +201,7 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onSearchResults }) => {
             onKeyDown={handleKeyDown}
             onFocus={() => query.trim() && suggestions.length > 0 && setShowSuggestions(true)}
             placeholder="Search medications, diagnoses, notes..."
-            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-base"
+            className="w-full px-6 py-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg text-center placeholder-gray-500"
           />
           
           {/* Suggestions Dropdown */}
@@ -216,10 +216,10 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onSearchResults }) => {
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-gray-400 text-sm">{suggestion.icon}</span>
-                    <span className="text-gray-900">{suggestion.text}</span>
+                    <span className="text-gray-400 text-base">{suggestion.icon}</span>
+                    <span className="text-gray-900 text-base">{suggestion.text}</span>
                     {suggestion.type === 'exact' && (
-                      <span className="ml-auto text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                      <span className="ml-auto text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
                         Exact
                       </span>
                     )}
@@ -233,7 +233,7 @@ const ClinicalSearch: React.FC<ClinicalSearchProps> = ({ onSearchResults }) => {
         <button
           onClick={() => performSearch(query)}
           disabled={!query.trim()}
-          className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium transition-colors"
+          className="px-6 py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium text-lg transition-colors"
         >
           Search
         </button>

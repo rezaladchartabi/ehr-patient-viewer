@@ -178,21 +178,21 @@ function App() {
       <div className="flex flex-col h-screen bg-gray-50">
       {/* Global Search Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg">
-        <div className="max-w-7xl mx-auto px-6 py-4">
+        <div className="max-w-7xl mx-auto py-4">
           <div className="grid grid-cols-3 items-center">
-            {/* Title */}
-            <div className="text-left">
+            {/* Title - Aligned with Patient Directory */}
+            <div className="pl-4">
               <a href="/" className="text-3xl font-bold text-white hover:underline focus:underline">
                 EHR Patient Viewer
               </a>
             </div>
             
-                         {/* Search Bar - Centered */}
-             <div className="flex justify-center">
-               <ClinicalSearch 
-                 onSearchResults={handleSearchResults}
-               />
-             </div>
+            {/* Search Bar - Centered */}
+            <div className="flex justify-center">
+              <ClinicalSearch 
+                onSearchResults={handleSearchResults}
+              />
+            </div>
             
             {/* Right side - empty for balance */}
             <div></div>
