@@ -1,64 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import './App.css';
-// Chat assistant removed from UI
 import ClinicalSearch from './components/ClinicalSearch';
+import PatientList from './components/PatientList';
+import PatientDetails from './components/PatientDetails';
+import NotesDisplay from './components/NotesDisplay';
+import ErrorBoundary from './components/ErrorBoundary';
+import { Patient, SearchResult, Note, Allergy } from './types';
+import apiService from './services/apiService';
+import config from './config';
 
-// Types
-interface Patient {
-  id: string;
-  family_name: string;
-  gender: string;
-  birth_date: string;
-  race?: string;
-  ethnicity?: string;
-  identifier?: string;
-  marital_status?: string;
-  allergies?: any[];
-}
-
-interface Encounter {
-  id: string;
-  status: string;
-  start_date: string;
-  end_date?: string;
-  class_display: string;
-  encounter_type: string;
-}
-
-interface ResourceData {
-  medicationAdministrations: any[];
-  observations: any[];
-  medicationRequests: any[];
-  specimens: any[];
-  medicationDispenses: any[];
-  conditions: any[];
-}
-
-const API_BASE = process.env.REACT_APP_API_BASE_URL || 'https://ehr-backend-87r9.onrender.com';
+// API configuration now handled by apiService
 
 function App() {
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [allPatients, setAllPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [encounters, setEncounters] = useState<Encounter[]>([]);
-  const [selectedEncounter, setSelectedEncounter] = useState<string>('all');
-  const [resourceData, setResourceData] = useState<ResourceData>({
-    medicationAdministrations: [],
-    observations: [],
-    medicationRequests: [],
-    specimens: [],
-    medicationDispenses: [],
-    conditions: []
-  });
-  const [activeTab, setActiveTab] = useState('conditions');
   const [loading, setLoading] = useState(false);
-  const [allergies, setAllergies] = useState<any[]>([]);
+  const [allergies, setAllergies] = useState<Allergy[]>([]);
   const [allergiesLoading, setAllergiesLoading] = useState(false);
-  const [pmh, setPmh] = useState<any[]>([]);
-  const [pmhLoading, setPmhLoading] = useState(false);
-  const [notes, setNotes] = useState<any[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
   const [notesLoading, setNotesLoading] = useState(false);
-  const [selectedNote, setSelectedNote] = useState<any>(null);
-  // Chat assistant removed
+  const [selectedNote, setSelectedNote] = useState<Note | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isBackendReady, setIsBackendReady] = useState(false);
+  const [backendStatus, setBackendStatus] = useState('Loading backend data...');
 
   // Load patients on mount with readiness polling and retry/backoff
   useEffect(() => {
@@ -74,441 +39,163 @@ function App() {
         const start = Date.now();
         while (!cancelled && Date.now() - start < 20000) {
           try {
-            const r = await fetch(`${API_BASE}/ready`);
-            const j = await r.json();
-            if (j.ready) break;
+            const data = await apiService.checkBackendReadiness();
+            if (data.ready) break;
           } catch {}
           await sleep(1000);
         }
 
-        // 2) Fetch patients with up to 3 retries
-        let attempt = 0;
-        let data: any = null;
-        while (!cancelled && attempt < 3) {
-          attempt += 1;
-          try {
-            const res = await fetch(`${API_BASE}/local/patients?limit=100`);
-            if (!res.ok) throw new Error(`status ${res.status}`);
-            data = await res.json();
-            break;
-          } catch (e) {
-            if (attempt >= 3) throw e;
-            await sleep(500 * attempt);
-          }
-        }
-
+        // 2) Fetch patients (API service handles retries)
         if (cancelled) return;
-        const fetched = Array.isArray(data?.patients) ? data.patients : [];
-        setPatients(fetched);
+        
+        const fetched = await apiService.getPatients(config.ui.patientListLimit);
+        
+        if (cancelled) return;
+        setAllPatients(fetched); // Store all patients
+        setPatients(fetched); // Initially show all patients
         if (fetched.length > 0) setSelectedPatient(fetched[0]);
-      } catch (err) {
-        console.error('❌ Error loading patients:', err);
-        if (!cancelled) setPatients([]);
+        setIsBackendReady(true);
+        setBackendStatus('Backend ready');
+      } catch (error) {
+        console.error('Error in fetchWithRetry:', error);
+        setBackendStatus('Error loading data');
       } finally {
         if (!cancelled) setLoading(false);
       }
     };
 
     fetchWithRetry();
-    return () => { cancelled = true; };
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  // Load patient data when patient is selected
+  // Poll backend readiness (only when not ready)
   useEffect(() => {
-    if (!selectedPatient) return;
-    
-    setLoading(true);
-    setAllergiesLoading(true);
-    setPmhLoading(true);
-    setNotesLoading(true);
-    
-    // Load encounters first
-    fetch(`${API_BASE}/Encounter?patient=Patient/${selectedPatient.id}&_count=100`)
-      .then(r => r.json())
-      .then(encountersRes => {
-        // Process encounters
-        const encounterList = (encountersRes.entry || []).map((e: any) => ({
-          id: e.resource.id,
-          status: e.resource.status,
-          start_date: e.resource.period?.start || '',
-          end_date: e.resource.period?.end || '',
-          class_display: e.resource.class?.display || e.resource.class?.code || '',
-          encounter_type: e.resource.type?.[0]?.coding?.[0]?.display || ''
-        }));
-        
-        setEncounters(encounterList);
-        setSelectedEncounter('all');
-        
-        // Load all patient data (for "All Encounters" view)
-        return Promise.all([
-          fetch(`${API_BASE}/Condition?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
-          fetch(`${API_BASE}/MedicationAdministration?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
-          fetch(`${API_BASE}/Observation?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
-          fetch(`${API_BASE}/MedicationRequest?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
-          fetch(`${API_BASE}/Specimen?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json()),
-          fetch(`${API_BASE}/MedicationDispense?patient=Patient/${selectedPatient.id}&_count=100`).then(r => r.json())
-        ]);
-      })
-      .then(([conditionsRes, medAdminRes, obsRes, medReqRes, specimenRes, medDispRes]) => {
-        // Process all resource types for "All Encounters" view
-        setResourceData({
-          conditions: conditionsRes.entry || [],
-          medicationAdministrations: medAdminRes.entry || [],
-          observations: obsRes.entry || [],
-          medicationRequests: medReqRes.entry || [],
-          specimens: specimenRes.entry || [],
-          medicationDispenses: medDispRes.entry || []
-        });
-        
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error('Failed to load patient data:', err);
-        setLoading(false);
-      });
+    if (isBackendReady) return; // Don't poll if already ready
 
-    // Load allergies separately
-    fetch(`${API_BASE}/local/patients/${selectedPatient.id}/allergies`)
-      .then(res => res.json())
-      .then(data => {
-        setAllergies(data.allergies || []);
-        setAllergiesLoading(false);
-      })
-      .catch(err => {
-        console.error('Failed to load allergies:', err);
-        setAllergies([]);
-        setAllergiesLoading(false);
-      });
+    const pollBackendReadiness = async () => {
+      try {
+        const data = await apiService.checkBackendReadiness();
+        if (data.ready) {
+          setIsBackendReady(true);
+          setBackendStatus('Backend ready');
+          return true; // Signal to stop polling
+        } else {
+          setBackendStatus('Backend is warming up...');
+          return false;
+        }
+      } catch (error) {
+        console.error('Error polling backend readiness:', error);
+        setIsBackendReady(false);
+        setBackendStatus('Backend connection error');
+        return false;
+      }
+    };
 
-    // Load Past Medical History separately
-    fetch(`${API_BASE}/local/patients/${selectedPatient.id}/pmh`)
-      .then(res => res.json())
-      .then(data => {
-        setPmh(data.pmh_conditions || []);
-        setPmhLoading(false);
-      })
-      .catch(err => {
-        console.error('Failed to load PMH:', err);
-        setPmh([]);
-        setPmhLoading(false);
-      });
+    let timeoutId: NodeJS.Timeout;
+    const poll = async () => {
+      const ready = await pollBackendReadiness();
+      if (!ready && !isBackendReady) {
+        timeoutId = setTimeout(poll, config.ui.pollingInterval);
+      }
+    };
 
-    // Load Notes from notes processor
-    fetch(`${API_BASE}/notes/patients/${selectedPatient.id}`)
-      .then(res => res.json())
-      .then(data => {
-        setNotes(data.notes || []);
-        setNotesLoading(false);
-      })
-      .catch(err => {
-        console.error('Failed to load notes:', err);
-        setNotes([]);
-        setNotesLoading(false);
-      });
-  }, [selectedPatient]);
+    // Start polling
+    poll();
 
-  // Load encounter-specific data when encounter is selected
+    return () => {
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, [isBackendReady]);
+
+  // Load patient details when selected
   useEffect(() => {
-    if (!selectedPatient || selectedEncounter === 'all') return;
-    
-    setLoading(true);
-    
-    const encounter = encounters.find(e => e.id === selectedEncounter);
-    if (!encounter) {
-      setLoading(false);
-      return;
-    }
-    
-    // Make API calls to encounter-specific endpoints
-    Promise.all([
-      fetch(`${API_BASE}/encounter/medications?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json()),
-      fetch(`${API_BASE}/encounter/observations?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json()),
-      fetch(`${API_BASE}/encounter/procedures?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json()),
-      fetch(`${API_BASE}/encounter/specimens?patient=Patient/${selectedPatient.id}&encounter=Encounter/${selectedEncounter}&start=${encounter.start_date}&end=${encounter.end_date || ''}`).then(r => r.json())
-    ])
-    .then(([medicationsRes, observationsRes, proceduresRes, specimensRes]) => {
-      // Process encounter-specific data
-      setResourceData({
-        conditions: [], // Conditions are typically not encounter-specific
-        medicationAdministrations: medicationsRes.administrations || [],
-        observations: observationsRes.observations || [],
-        medicationRequests: medicationsRes.requests || [],
-        specimens: specimensRes.specimens || [],
-        medicationDispenses: medicationsRes.dispenses || []
-      });
-      
-      setLoading(false);
-    })
-    .catch(err => {
-      console.error('Failed to load encounter data:', err);
-      setLoading(false);
-    });
-  }, [selectedEncounter, selectedPatient, encounters]);
+    if (!selectedPatient || !isBackendReady) return;
 
-    // No longer need client-side filtering since we use server-side API calls
+    let cancelled = false;
 
-  // Format different resource types for display
-  const formatResource = (item: any, resourceType: string) => {
-    const resource = item.resource;
+    const fetchPatientDetails = async () => {
+      try {
+        setAllergiesLoading(true);
+        setNotesLoading(true);
+
+        // Fetch all patient details in parallel using API service
+        const { allergies, notes } = await apiService.getPatientDetails(selectedPatient.id);
+        
+        // Only update state if component is still mounted and request wasn't cancelled
+        if (!cancelled) {
+          setAllergies(allergies);
+          setNotes(notes);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Error fetching patient details:', error);
+          // Set empty arrays on error
+          setAllergies([]);
+          setNotes([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setAllergiesLoading(false);
+          setNotesLoading(false);
+        }
+      }
+    };
+
+    fetchPatientDetails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedPatient, isBackendReady]);
+
+  // Handle search results
+  const handleSearchResults = (results: SearchResult[]) => {
+    setIsSearching(true);
     
-    switch (resourceType) {
-      case 'conditions':
-        return (
-          <div className="p-4">
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                <h4 className="text-lg font-semibold text-gray-900 mb-2">
-                  {resource.code?.text || resource.code?.coding?.[0]?.display || 'Unknown Condition'}
-                </h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div>
-                    <span className="text-sm font-medium text-gray-500">Status</span>
-                    <p className="text-sm text-gray-900">{resource.clinicalStatus?.coding?.[0]?.code || 'Unknown'}</p>
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium text-gray-500">Category</span>
-                    <p className="text-sm text-gray-900">{resource.category?.[0]?.coding?.[0]?.display || 'N/A'}</p>
-                  </div>
-                  <div>
-                    <span className="text-sm font-medium text-gray-500">Recorded</span>
-                    <p className="text-sm text-gray-900">{resource.recordedDate || 'N/A'}</p>
-                  </div>
-                  {resource.code?.coding?.[0]?.code && (
-                    <div>
-                      <span className="text-sm font-medium text-gray-500">Code</span>
-                      <p className="text-sm text-gray-900">{resource.code.coding[0].code}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="ml-4">
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                  Condition
-                </span>
-              </div>
-            </div>
-          </div>
-        );
-        
-      case 'medicationRequests':
-        return (
-          <div className="resource-item">
-            <div className="resource-title">
-              {resource.medicationCodeableConcept?.text || 
-               resource.medicationCodeableConcept?.coding?.[0]?.display ||
-               resource.medicationCodeableConcept?.coding?.[0]?.code ||
-               resource.medicationReference?.display || 'Unknown Medication'}
-            </div>
-            <div className="resource-details">
-              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
-              <span className="detail-item">Intent: {resource.intent || 'N/A'}</span>
-              <span className="detail-item">Authored: {resource.authoredOn || 'N/A'}</span>
-              {resource.route_display && (
-                <span className="detail-item">Route: {resource.route_display}</span>
-              )}
-              {resource.timing_display && (
-                <span className="detail-item">Timing: {resource.timing_display}</span>
-              )}
-              {resource.medicationCodeableConcept?.coding?.[0]?.code && (
-                <span className="detail-item">Code: {resource.medicationCodeableConcept.coding[0].code}</span>
-              )}
-              {resource.dosageInstruction?.[0]?.text && (
-                <span className="detail-item">Dosage: {resource.dosageInstruction[0].text}</span>
-              )}
-            </div>
-          </div>
-        );
-        
-      case 'medicationAdministrations':
-        return (
-          <div className="resource-item">
-            <div className="resource-title">
-              {resource.medicationCodeableConcept?.text || 
-               resource.medicationCodeableConcept?.coding?.[0]?.display ||
-               resource.medicationCodeableConcept?.coding?.[0]?.code ||
-               resource.medicationReference?.display || 'Unknown Medication'}
-            </div>
-            <div className="resource-details">
-              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
-              <span className="detail-item">Effective: {resource.effectiveDateTime || resource.effectivePeriod?.start || 'N/A'}</span>
-              {resource.route_display && (
-                <span className="detail-item">Route: {resource.route_display}</span>
-              )}
-              {resource.timing_display && (
-                <span className="detail-item">Timing: {resource.timing_display}</span>
-              )}
-              {resource.medicationCodeableConcept?.coding?.[0]?.code && (
-                <span className="detail-item">Code: {resource.medicationCodeableConcept.coding[0].code}</span>
-              )}
-              {resource.dosage?.dose?.value && (
-                <span className="detail-item">Dose: {resource.dosage.dose.value} {resource.dosage.dose.unit}</span>
-              )}
-            </div>
-          </div>
-        );
-        
-      case 'observations':
-        return (
-          <div className="resource-item">
-            <div className="resource-title">
-              {resource.code?.text || resource.code?.coding?.[0]?.display || 'Unknown Observation'}
-            </div>
-            <div className="resource-details">
-              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
-              <span className="detail-item">Effective: {resource.effectiveDateTime || 'N/A'}</span>
-              {resource.valueQuantity && (
-                <span className="detail-item">Value: {resource.valueQuantity.value} {resource.valueQuantity.unit}</span>
-              )}
-              {resource.valueString && (
-                <span className="detail-item">Value: {resource.valueString}</span>
-              )}
-              {resource.valueCodeableConcept?.text && (
-                <span className="detail-item">Value: {resource.valueCodeableConcept.text}</span>
-              )}
-            </div>
-          </div>
-        );
-        
-      case 'specimens':
-        return (
-          <div className="resource-item">
-            <div className="resource-title">
-              {resource.type?.text || resource.type?.coding?.[0]?.display || 'Unknown Specimen'}
-            </div>
-            <div className="resource-details">
-              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
-              <span className="detail-item">Collected: {resource.collection?.collectedDateTime || 'N/A'}</span>
-              {resource.collection?.bodySite?.text && (
-                <span className="detail-item">Body Site: {resource.collection.bodySite.text}</span>
-              )}
-              {resource.collection?.method?.text && (
-                <span className="detail-item">Method: {resource.collection.method.text}</span>
-              )}
-            </div>
-          </div>
-        );
-        
-      case 'medicationDispenses':
-        return (
-          <div className="resource-item">
-            <div className="resource-title">
-              {resource.medicationCodeableConcept?.text || 
-               resource.medicationCodeableConcept?.coding?.[0]?.display ||
-               resource.medicationCodeableConcept?.coding?.[0]?.code ||
-               resource.medicationReference?.display || 'Unknown Medication'}
-            </div>
-            <div className="resource-details">
-              <span className="detail-item">Status: {resource.status || 'Unknown'}</span>
-              <span className="detail-item">Dispensed: {resource.whenHandedOver || resource.whenPrepared || 'N/A'}</span>
-              {resource.route_display && (
-                <span className="detail-item">Route: {resource.route_display}</span>
-              )}
-              {resource.timing_display && (
-                <span className="detail-item">Timing: {resource.timing_display}</span>
-              )}
-              {/* Show quantity even if 0 to help debug */}
-              {resource.quantity && (
-                <span className="detail-item">Quantity: {resource.quantity.value || 0} {resource.quantity.unit || resource.quantity.code || ''}</span>
-              )}
-              {resource.daysSupply && (
-                <span className="detail-item">Days Supply: {resource.daysSupply.value || 0}</span>
-              )}
-              {/* Additional quantity fields that might exist */}
-              {resource.dosageInstruction?.[0]?.doseAndRate?.[0]?.doseQuantity?.value && (
-                <span className="detail-item">Dose: {resource.dosageInstruction[0].doseAndRate[0].doseQuantity.value} {resource.dosageInstruction[0].doseAndRate[0].doseQuantity.unit}</span>
-              )}
-              {/* Show performer/dispenser if available */}
-              {resource.performer?.[0]?.actor?.display && (
-                <span className="detail-item">Dispenser: {resource.performer[0].actor.display}</span>
-              )}
-              {/* Show location if available */}
-              {resource.location?.display && (
-                <span className="detail-item">Location: {resource.location.display}</span>
-              )}
-            </div>
-          </div>
-        );
-        
-      default:
-        return (
-          <div className="resource-item">
-            <div className="resource-title">
-              {resource.resourceType} - {resource.id}
-            </div>
-            <div className="resource-details">
-              <span className="detail-item">Status: {resource.status || 'N/A'}</span>
-            </div>
-          </div>
-        );
+    // Filter patients based on search results
+    const patientIds = Array.from(new Set(results.map(result => result.patient_id)));
+    const filteredPatients = allPatients.filter(patient => patientIds.includes(patient.id));
+    
+    setPatients(filteredPatients);
+    
+    // Select the first filtered patient if available
+    if (filteredPatients.length > 0) {
+      setSelectedPatient(filteredPatients[0]);
     }
   };
 
-  const renderResourceTab = (tabName: string, resources: any[], resourceType: string) => {
-    if (activeTab !== tabName) return null;
-    
-    if (loading) return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600">Loading {tabName.toLowerCase()}...</p>
-        </div>
-      </div>
-    );
-    
-    if (resources.length === 0) {
-      return (
-        <div className="flex items-center justify-center h-64">
-          <div className="text-center">
-            <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-            </svg>
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No {tabName} Found</h3>
-            <p className="text-gray-600">No {tabName.toLowerCase()} data available for this patient</p>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div className="p-6">
-        <div className="mb-6">
-          <h3 className="text-xl font-semibold text-gray-900">{tabName}</h3>
-          <p className="text-gray-600">{resources.length} items found</p>
-        </div>
-        <div className="space-y-4">
-          {resources.map((item: any, idx: number) => (
-            <div key={idx} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-              {formatResource(item, resourceType)}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
+  // Clear search
+  const clearSearch = () => {
+    setIsSearching(false);
+    setPatients(allPatients);
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
+    <ErrorBoundary>
+      <div className="flex flex-col h-screen bg-gray-50">
       {/* Global Search Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-800 shadow-lg">
-        <div className="w-full px-6 py-4">
+        <div className="max-w-7xl mx-auto px-6 py-4">
           <div className="grid grid-cols-3 items-center">
-            <h1 className="text-2xl md:text-3xl font-bold text-white">
-              <a href="/" className="hover:underline focus:underline outline-none">EHR Patient Viewer</a>
-            </h1>
-            <div className="justify-self-center w-full max-w-2xl md:max-w-3xl">
-              <ClinicalSearch 
-                onResultClick={(result) => {
-                  console.log('Search result clicked:', result);
-                }}
-                onPatientSelect={(patientId) => {
-                  const patient = patients.find(p => p.id === patientId);
-                  if (patient) {
-                    setSelectedPatient(patient);
-                  }
-                }}
-              />
+            {/* Title */}
+            <div className="text-left">
+              <a href="/" className="text-3xl font-bold text-white hover:underline focus:underline">
+                EHR Patient Viewer
+              </a>
             </div>
-            <div />
+            
+                         {/* Search Bar - Centered */}
+             <div className="flex justify-center">
+               <ClinicalSearch 
+                 onSearchResults={handleSearchResults}
+               />
+             </div>
+            
+            {/* Right side - empty for balance */}
+            <div></div>
           </div>
         </div>
       </div>
@@ -516,331 +203,59 @@ function App() {
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
         {/* Patient List Sidebar */}
-        <div className={`w-96 bg-white shadow-lg border-r border-gray-200 flex flex-col`}>
-          <div className="p-6 border-b border-gray-200 bg-gray-50">
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Patient Directory</h2>
-            <p className="text-sm text-gray-600">Select a patient to view their clinical data</p>
+        <div className="w-1/3 bg-white shadow-lg border-r border-gray-200 flex flex-col">
+          <div className="p-4 border-b border-gray-200">
+            <h2 className="text-lg font-semibold text-gray-900">Patient Directory</h2>
+            {!isBackendReady && (
+              <p className="text-sm text-gray-500 mt-1">{backendStatus}</p>
+            )}
           </div>
+          
           <div className="flex-1 overflow-y-auto">
-            {patients.map(patient => (
-              <div
-                key={patient.id}
-                className={`p-4 cursor-pointer transition-all duration-200 ${
-                  selectedPatient?.id === patient.id 
-                    ? 'bg-blue-50 border-l-4 border-blue-500 shadow-sm' 
-                    : 'hover:bg-gray-50 border-l-4 border-transparent'
-                }`}
-                onClick={() => setSelectedPatient(patient)}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="font-semibold text-gray-900 truncate">{patient.family_name}</div>
-                    <div className="text-sm text-gray-500 mt-1">
-                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 mr-2">
-                        {patient.gender}
-                      </span>
-                      {patient.birth_date}
-                    </div>
-                  </div>
-                  {selectedPatient?.id === patient.id && (
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  )}
-                </div>
-              </div>
-            ))}
+            <PatientList
+              patients={patients}
+              selectedPatient={selectedPatient}
+              onPatientSelect={setSelectedPatient}
+              loading={loading}
+              isSearching={isSearching}
+              onClearSearch={clearSearch}
+            />
           </div>
         </div>
 
         {/* Patient Details */}
-        <div className={`flex-1 flex flex-col transition-all duration-300`}>
+        <div className="flex-1 flex flex-col transition-all duration-300">
           {selectedPatient ? (
             <>
-              {/* Patient Info Header */}
-              <div className="bg-white shadow-sm border-b border-gray-200">
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h1 className="text-2xl font-bold text-gray-900 mb-1">{selectedPatient.family_name}</h1>
-                      <p className="text-gray-600">Patient ID: {selectedPatient.identifier}</p>
-                    </div>
-                    {/* Assistant toggle removed */}
-                  </div>
-                  
-                  {/* Patient Demographics */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="text-sm font-medium text-gray-500">Gender</div>
-                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.gender}</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="text-sm font-medium text-gray-500">Birth Date</div>
-                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.birth_date}</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="text-sm font-medium text-gray-500">Race</div>
-                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.race || 'N/A'}</div>
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="text-sm font-medium text-gray-500">Marital Status</div>
-                      <div className="text-lg font-semibold text-gray-900">{selectedPatient.marital_status || 'N/A'}</div>
-                    </div>
-                  </div>
-                  
-                  {/* Allergies Section */}
-                  <div className="mb-6">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Allergies</h3>
-                    {allergiesLoading ? (
-                      <div className="text-gray-500">Loading allergies...</div>
-                    ) : allergies.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {allergies.map((allergy, index) => (
-                          <span 
-                            key={index}
-                            className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-red-100 text-red-800 border border-red-200"
-                            title={allergy.note || 'Clinical allergy'}
-                          >
-                            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                            </svg>
-                            {allergy.allergy_name}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-gray-500 bg-green-50 border border-green-200 rounded-lg p-3">
-                        <div className="flex items-center">
-                          <svg className="w-5 h-5 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                          </svg>
-                          No known allergies
-                        </div>
-                      </div>
-                    )}
-                  </div>
+              <PatientDetails
+                patient={selectedPatient}
+                allergies={allergies}
+                allergiesLoading={allergiesLoading}
+              />
 
-                  {/* Encounter Filter */}
-                  <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Filter by Encounter</label>
-                    <select
-                      value={selectedEncounter}
-                      onChange={(e) => setSelectedEncounter(e.target.value)}
-                      className="w-full max-w-md border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="all">All Encounters</option>
-                      {encounters.map(encounter => (
-                        <option key={encounter.id} value={encounter.id}>
-                          {encounter.class_display} - {encounter.start_date} ({encounter.status})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-            {/* Resource Tabs */}
-            <div className="bg-white border-b border-gray-200">
-              <div className="px-6">
-                <div className="flex space-x-8 overflow-x-auto">
-                  {[
-                    { id: 'conditions', label: 'Conditions', count: resourceData.conditions.length, icon: '🩺' },
-                    { id: 'medicationAdministrations', label: 'Med Admin', count: resourceData.medicationAdministrations.length, icon: '💊' },
-                    { id: 'observations', label: 'Observations', count: resourceData.observations.length, icon: '📊' },
-                    { id: 'medicationRequests', label: 'Med Requests', count: resourceData.medicationRequests.length, icon: '📋' },
-                    { id: 'specimens', label: 'Specimens', count: resourceData.specimens.length, icon: '🧪' },
-                    { id: 'medicationDispenses', label: 'Med Dispense', count: resourceData.medicationDispenses.length, icon: '📦' },
-                    { id: 'pmh', label: 'PMH', count: pmh.length, icon: '📋' },
-                    { id: 'notes', label: 'Notes', count: notes.length, icon: '📝' }
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setActiveTab(tab.id)}
-                      className={`flex items-center space-x-2 px-4 py-3 text-sm font-medium border-b-2 transition-all duration-200 whitespace-nowrap ${
-                        activeTab === tab.id
-                          ? 'border-blue-500 text-blue-600 bg-blue-50'
-                          : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      <span className="text-lg">{tab.icon}</span>
-                      <span>{tab.label}</span>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        activeTab === tab.id
-                          ? 'bg-blue-100 text-blue-800'
-                          : 'bg-gray-100 text-gray-600'
-                      }`}>
-                        {tab.count}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+              <NotesDisplay
+                notes={notes}
+                notesLoading={notesLoading}
+                selectedNote={selectedNote}
+                onNoteSelect={setSelectedNote}
+                selectedPatient={selectedPatient}
+              />
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-gray-500 bg-gray-50">
+              <div className="text-center">
+                <svg className="mx-auto h-24 w-24 text-gray-300 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Patient Selected</h3>
+                <p className="text-gray-600">Choose a patient from the directory to view their clinical data</p>
               </div>
             </div>
-
-            {/* Tab Content */}
-            <div className="flex-1 overflow-y-auto bg-gray-50">
-              {renderResourceTab('conditions', resourceData.conditions, 'conditions')}
-              {renderResourceTab('medicationAdministrations', resourceData.medicationAdministrations, 'medicationAdministrations')}
-              {renderResourceTab('observations', resourceData.observations, 'observations')}
-              {renderResourceTab('medicationRequests', resourceData.medicationRequests, 'medicationRequests')}
-              {renderResourceTab('specimens', resourceData.specimens, 'specimens')}
-              {renderResourceTab('medicationDispenses', resourceData.medicationDispenses, 'medicationDispenses')}
-              
-              {/* PMH Tab Content */}
-              {activeTab === 'pmh' && (
-                <div className="p-4">
-                  <h3 className="font-semibold mb-3">Past Medical History ({pmh.length})</h3>
-                  {pmhLoading ? (
-                    <div className="text-gray-500">Loading medical history...</div>
-                  ) : pmh.length > 0 ? (
-                    <div className="space-y-3">
-                      {pmh
-                        .sort((a, b) => {
-                          // Sort by chart_time, most recent first
-                          const dateA = new Date(a.chart_time || a.recorded_date || '1900-01-01').getTime();
-                          const dateB = new Date(b.chart_time || b.recorded_date || '1900-01-01').getTime();
-                          return dateB - dateA;
-                        })
-                        .map((condition, index) => (
-                        <div key={index} className="resource-item">
-                          <div className="resource-title">
-                            {condition.condition_name}
-                          </div>
-                          <div className="resource-details">
-                            <span className="detail-item">
-                              Chart Date: {condition.chart_time ? new Date(condition.chart_time).toLocaleDateString() : 
-                                         (condition.recorded_date ? new Date(condition.recorded_date).toLocaleDateString() : 'Unknown')}
-                            </span>
-                            {condition.note && (
-                              <span className="detail-item">Source: {condition.note}</span>
-                            )}
-                            <span className="detail-item">Category: {condition.category || 'Medical History'}</span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-gray-500">No medical history available</div>
-                  )}
-                </div>
-              )}
-
-              {/* Notes Tab Content */}
-              {activeTab === 'notes' && (
-                <div className="p-6">
-                  <div className="mb-6">
-                    <h3 className="text-xl font-semibold text-gray-900">Clinical Notes</h3>
-                    <p className="text-gray-600">{notes.length} notes found</p>
-                  </div>
-                  {notesLoading ? (
-                    <div className="flex items-center justify-center h-64">
-                      <div className="text-center">
-                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                        <p className="text-gray-600">Loading clinical notes...</p>
-                      </div>
-                    </div>
-                  ) : notes.length > 0 ? (
-                    <div className="space-y-4">
-                      {notes.map((note, index) => (
-                        <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden cursor-pointer hover:shadow-md transition-shadow duration-200" 
-                             onClick={() => setSelectedNote(note)}>
-                          <div className="p-4">
-                            <div className="flex items-start justify-between mb-3">
-                              <h4 className="text-lg font-semibold text-gray-900">
-                                {note.note_id || `Note ${index + 1}`}
-                              </h4>
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                {note.note_type || 'General'}
-                              </span>
-                            </div>
-                            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-3">
-                              <div>
-                                <span className="text-sm font-medium text-gray-500">Charted</span>
-                                <p className="text-sm text-gray-900">{note.charttime_formatted || (note.timestamp ? new Date(note.timestamp).toLocaleString() : 'Unknown')}</p>
-                              </div>
-                              <div>
-                                <span className="text-sm font-medium text-gray-500">Stored</span>
-                                <p className="text-sm text-gray-900">{note.storetime_formatted || (note.timestamp ? new Date(note.timestamp).toLocaleString() : 'Unknown')}</p>
-                              </div>
-                              <div>
-                                <span className="text-sm font-medium text-gray-500">Type</span>
-                                <p className="text-sm text-gray-900">{note.note_type || 'General'}</p>
-                              </div>
-                            </div>
-                            <div className="bg-gray-50 rounded-lg p-3">
-                              <span className="text-sm font-medium text-gray-500 block mb-1">Preview</span>
-                              <p className="text-sm text-gray-700 line-clamp-2">
-                                {(note.text || note.content || '').substring(0, 200)}...
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-center h-64">
-                      <div className="text-center">
-                        <svg className="mx-auto h-16 w-16 text-gray-300 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No Clinical Notes</h3>
-                        <p className="text-gray-600">No clinical notes available for this patient</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-
-
-              {/* Note Detail Modal */}
-              {selectedNote && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-                    <div className="flex justify-between items-center mb-4">
-                      <h2 className="text-xl font-semibold">
-                        {selectedNote.note_id || 'Clinical Note'}
-                      </h2>
-                      <button 
-                        onClick={() => setSelectedNote(null)}
-                        className="text-gray-500 hover:text-gray-700"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div className="mb-4 text-sm text-gray-600">
-                      <span className="mr-4">
-                        Charted: {selectedNote.charttime_formatted || 'Unknown'}
-                      </span>
-                      <span className="mr-4">
-                        Stored: {selectedNote.storetime_formatted || 'Unknown'}
-                      </span>
-                      <span>
-                        Type: {selectedNote.note_type || 'General'}
-                      </span>
-                    </div>
-                    <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                      {selectedNote.text}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-gray-500 bg-gray-50">
-            <div className="text-center">
-              <svg className="mx-auto h-24 w-24 text-gray-300 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <h3 className="text-lg font-medium text-gray-900 mb-2">No Patient Selected</h3>
-              <p className="text-gray-600">Choose a patient from the directory to view their clinical data</p>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
-
-      {/* Assistant panel removed */}
-    </div>
+    </ErrorBoundary>
   );
 }
 

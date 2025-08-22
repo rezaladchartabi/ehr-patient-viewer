@@ -8,25 +8,16 @@
   "license": "MIT",
   "dependencies": {
     "cra-template-pwa-typescript": "2.0.0",
-    "lucide-react": "^0.539.0",
-    "next-themes": "^0.4.6",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-scripts": "5.0.1",
-    "web-vitals": "^2.1.4",
-    "xlsx": "^0.18.5"
+    "web-vitals": "^2.1.4"
   },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
     "build:deploy": "DISABLE_ESLINT_PLUGIN=true CI=false react-scripts build",
     "test": "react-scripts test",
-    "chunk:notes": "ts-node --compiler-options '{\"module\":\"commonjs\"}' src/rag/cli/chunk_cli.ts",
-    "rag:chunk": "npm run chunk:notes -- --in backend/discharge_notes.xlsx --out rag_chunks.jsonl",
-    "rag:ingest": "node scripts/rag_ingest.js",
-    "rag:all": "npm run rag:chunk && npm run rag:ingest",
-    "rag:quick": "./scripts/quick_ingest.sh",
-    "rag:auto": "./scripts/auto_ingest.sh",
     "test:coverage": "react-scripts test --coverage --watchAll=false",
     "test:ci": "react-scripts test --coverage --watchAll=false --ci",
     "eject": "react-scripts eject",
@@ -83,7 +74,6 @@
     "tailwindcss": "^3.4.14",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^4.9.5",
-    "ts-node": "^10.9.2",
     "webpack-bundle-analyzer": "^4.9.0"
   },
   "engines": {
