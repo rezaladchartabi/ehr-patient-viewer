@@ -69,7 +69,7 @@ def handle_fhir_error(endpoint: str, error: Exception) -> Dict:
     return {"resourceType": "Bundle", "type": "searchset", "total": 0, "entry": []}
 
 # Local database and sync service
-local_db = LocalDatabase("local_ehr.db")
+local_db = LocalDatabase(os.path.join(os.path.dirname(__file__), "local_ehr.db"))
 # sync_service will be initialized after fetch_from_fhir is defined
 
 # Search index (SQLite FTS5)
