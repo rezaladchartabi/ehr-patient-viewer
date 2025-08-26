@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-FHIR_BASE_URL = os.getenv("FHIR_BASE_URL", "http://localhost:8080/")
+FHIR_BASE_URL = os.getenv("FHIR_BASE_URL", "https://hapi.fhir.org/baseR4/")
 
 # Detect pytest to adjust timings so tests don't bleed into each other
 _IS_TEST_ENV = (

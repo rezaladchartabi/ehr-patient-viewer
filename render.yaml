@@ -11,7 +11,7 @@ services:
       - key: PORT
         value: 8005
       - key: FHIR_BASE_URL
-        value: http://localhost:8080/
+        value: https://hapi.fhir.org/baseR4/
       - key: AUTO_SYNC_ON_STARTUP
         value: true
       - key: RAG_ENABLED
