@@ -24,7 +24,7 @@ const isDevelopment = process.env.NODE_ENV === 'development';
 
 export const config: AppConfig = {
   api: {
-    baseUrl: process.env.REACT_APP_API_BASE_URL || 'http://localhost:8006',
+    baseUrl: process.env.REACT_APP_API_URL || process.env.REACT_APP_API_BASE_URL || 'http://localhost:8006',
     timeout: parseInt(process.env.REACT_APP_API_TIMEOUT || '10000'),
     retryAttempts: parseInt(process.env.REACT_APP_RETRY_ATTEMPTS || '3'),
     retryDelay: parseInt(process.env.REACT_APP_RETRY_DELAY || '1000'),
