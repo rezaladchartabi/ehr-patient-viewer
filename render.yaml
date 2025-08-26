@@ -31,11 +31,12 @@ services:
       - key: CHROMA_SERVER_HTTP_PORT
         value: 8000
 
-  # Frontend Static Site
-  - type: static
+  # Frontend Web Service
+  - type: web
     name: ehr-frontend
+    env: node
     buildCommand: npm install --legacy-peer-deps && npm run build:deploy
-    staticPublishPath: ./build
+    startCommand: npx serve -s build -l $PORT
     envVars:
       - key: REACT_APP_API_URL
         value: https://ehr-backend-87r9.onrender.com
