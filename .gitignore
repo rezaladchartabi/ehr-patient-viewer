@@ -55,6 +55,7 @@ jspm_packages/
 # Database files (if you want to exclude them)
 *.sqlite3
 *.db
+!backend/local_ehr.db
 
 # Deployment files
 deployment/
