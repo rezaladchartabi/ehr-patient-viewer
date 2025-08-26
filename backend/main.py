@@ -38,7 +38,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuration
-FHIR_BASE_URL = os.getenv("FHIR_BASE_URL", "https://hapi.fhir.org/baseR4/")
+FHIR_BASE_URL = os.getenv("FHIR_BASE_URL", "https://test.fhir.org/r4/")
 
 # Detect pytest to adjust timings so tests don't bleed into each other
 _IS_TEST_ENV = (
@@ -1287,7 +1287,8 @@ async def health_check():
             fhir_healthy = False
             logger.error(f"FHIR server health check failed: {e}")
         
-        overall_healthy = db_healthy and fhir_healthy
+        # Backend is healthy if database is healthy, FHIR server is optional
+        overall_healthy = db_healthy
         
         return {
             "status": "healthy" if overall_healthy else "unhealthy",
